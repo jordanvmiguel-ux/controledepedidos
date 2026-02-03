@@ -1,41 +1,518 @@
-<!DOCTYPE html>
-<html lang="pt-pt">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lista de Presentes - Areli & Jordan</title>
-    
-    <!-- React & Babel -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Google Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&family=Pinyon+Script&family=Playfair+Display:wght@400;600;700;900&display=swap" rel="stylesheet">
+import React, { useState, useMemo, useEffect } from 'react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getAuth, 
+  signInWithCustomToken, 
+  signInAnonymously, 
+  onAuthStateChanged 
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  collection, 
+  doc, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  onSnapshot 
+} from 'firebase/firestore';
+import { 
+  Plus, Search, Trash2, CheckCircle, AlertCircle, XCircle, 
+  TrendingUp, Building2, FileText, Filter, Send, Mail, 
+  ChevronDown, Check, X, Settings, LayoutDashboard, Tag, Briefcase 
+} from 'lucide-react';
 
-    <!-- Firebase SDKs -->
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+// --- CONFIGURAÇÃO FIREBASE ---
+const firebaseConfig = {
+  apiKey: "AIzaSyD8ESZNnBISo02QOXB1Mofk8fL-CnHuJ_Y",
+  authDomain: "controle-de-pedidos-4feb7.firebaseapp.com",
+  projectId: "controle-de-pedidos-4feb7",
+  storageBucket: "controle-de-pedidos-4feb7.firebasestorage.app",
+  messagingSenderId: "790889761374",
+  appId: "1:790889761374:web:e9b7589fbe37e88aabc2cf",
+  measurementId: "G-HXBFWFNC2R"
+};
 
-    <style>
-        body { font-family: 'Inter', sans-serif; }
-        .font-serif { font-family: 'Playfair Display', serif; }
-        .font-script { font-family: 'Pinyon Script', cursive; }
-    </style>
-</head>
-<body class="bg-[#f4f5f0] text-[#2f3b1c]">
-    <div id="root"></div>
+// Inicialização dos serviços
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'controle-pedidos-4feb7';
 
-    <script type="text/babel">
-        // TODO: Código React completo conforme enviado pelo usuário
-        // O conteúdo foi mantido conforme fornecido.
-        ...
-    </script>
-</body>
-</html>
+const App = () => {
+  const [user, setUser] = useState(null);
+  const [view, setView] = useState('dashboard');
+  
+  // Estados de Dados (Sincronizados com Firestore)
+  const [pedidos, setPedidos] = useState([]);
+  const [mantenedoras, setMantenedoras] = useState([]);
+  const [filiaisDisponiveis, setFiliaisDisponiveis] = useState([]);
+  const [statusDisponiveis, setStatusDisponiveis] = useState([]);
+
+  // Estados Locais de UI
+  const [busca, setBusca] = useState('');
+  const [showModal, setShowModal] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [novoPedido, setNovoPedido] = useState({
+    numero: '', valor: '', filial: '', mantenedora: '', status: '', enviado: 'Não'
+  });
+
+  // 1. Efeito de Autenticação com Fallback para Erros de Token (REGRA 3)
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        // Tenta usar o token customizado se existir
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          try {
+            await signInWithCustomToken(auth, __initial_auth_token);
+          } catch (tokenErr) {
+            // Se falhar o mismatch de token, tenta anônimo
+            console.warn("Token falhou, tentando login anônimo...", tokenErr.message);
+            await signInAnonymously(auth);
+          }
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (err) {
+        console.error("Erro crítico na autenticação:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, setUser);
+    return () => unsubscribe();
+  }, []);
+
+  // 2. Efeito de Escuta de Dados (REGRA 1 e 2)
+  useEffect(() => {
+    if (!user) return;
+
+    // Referências das coleções seguindo a REGRA 1
+    const colPedidos = collection(db, 'artifacts', appId, 'public', 'data', 'pedidos');
+    const colFiliais = collection(db, 'artifacts', appId, 'public', 'data', 'filiais');
+    const colStatus = collection(db, 'artifacts', appId, 'public', 'data', 'status');
+    const colMantenedoras = collection(db, 'artifacts', appId, 'public', 'data', 'mantenedoras');
+
+    const unsubPedidos = onSnapshot(colPedidos, (snap) => {
+      setPedidos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => console.error("Erro ao carregar pedidos:", err));
+
+    const unsubFiliais = onSnapshot(colFiliais, (snap) => {
+      const data = snap.docs.map(d => d.data().nome);
+      if (data.length > 0) setFiliaisDisponiveis(data);
+    }, (err) => console.error("Erro ao carregar filiais:", err));
+
+    const unsubStatus = onSnapshot(colStatus, (snap) => {
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (data.length > 0) setStatusDisponiveis(data);
+    }, (err) => console.error("Erro ao carregar status:", err));
+
+    const unsubMantenedoras = onSnapshot(colMantenedoras, (snap) => {
+      const data = snap.docs.map(d => d.data().nome);
+      if (data.length > 0) setMantenedoras(data);
+    }, (err) => console.error("Erro ao carregar mantenedoras:", err));
+
+    return () => {
+      unsubPedidos();
+      unsubFiliais();
+      unsubStatus();
+      unsubMantenedoras();
+    };
+  }, [user]);
+
+  // --- LÓGICA DE PERSISTÊNCIA ---
+
+  const handleAddPedido = async (e) => {
+    e.preventDefault();
+    if (!user) return;
+    
+    const valorTratado = typeof novoPedido.valor === 'string' 
+      ? parseFloat(novoPedido.valor.replace(',', '.')) 
+      : parseFloat(novoPedido.valor);
+
+    try {
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'pedidos'), {
+        ...novoPedido,
+        valor: isNaN(valorTratado) ? 0 : valorTratado,
+        createdAt: new Date().toISOString()
+      });
+      setShowModal(false);
+    } catch (err) {
+      console.error("Erro ao salvar pedido:", err);
+    }
+  };
+
+  const toggleEnviado = async (pedido) => {
+    if (!user) return;
+    try {
+      const ref = doc(db, 'artifacts', appId, 'public', 'data', 'pedidos', pedido.id);
+      await updateDoc(ref, { enviado: pedido.enviado === 'Sim' ? 'Não' : 'Sim' });
+    } catch (err) {
+      console.error("Erro ao atualizar status de envio:", err);
+    }
+  };
+
+  const excluirPedido = async (id) => {
+    if (!user) return;
+    try {
+      const ref = doc(db, 'artifacts', appId, 'public', 'data', 'pedidos', id);
+      await deleteDoc(ref);
+    } catch (err) {
+      console.error("Erro ao excluir pedido:", err);
+    }
+  };
+
+  // Funções ADM
+  const addItemConfig = async (collectionName, data) => {
+    if (!user) return;
+    try {
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', collectionName), data);
+    } catch (err) {
+      console.error(`Erro ao adicionar em ${collectionName}:`, err);
+    }
+  };
+
+  const abrirModal = () => {
+    setNovoPedido({
+      numero: '',
+      valor: '',
+      filial: filiaisDisponiveis[0] || '',
+      mantenedora: mantenedoras[0] || '',
+      status: statusDisponiveis[0]?.label || '',
+      enviado: 'Não'
+    });
+    setShowModal(true);
+  };
+
+  const pedidosFiltrados = useMemo(() => {
+    const t = busca.toLowerCase();
+    return pedidos.filter(p => 
+      p.numero?.toLowerCase().includes(t) || 
+      p.filial?.toLowerCase().includes(t) || 
+      p.mantenedora?.toLowerCase().includes(t)
+    );
+  }, [pedidos, busca]);
+
+  // --- VIEWS ---
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+          <p className="text-slate-500 font-bold text-sm animate-pulse">AUTENTICANDO...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const DashboardView = () => (
+    <div className="animate-in fade-in duration-500">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <StatCard title="Total Pedidos" value={pedidos.length} icon={<FileText className="text-indigo-600" />} />
+        <StatCard title="Enviados" value={pedidos.filter(p => p.enviado === 'Sim').length} icon={<Send className="text-blue-600" />} />
+        <StatCard title="Filiais" value={filiaisDisponiveis.length} icon={<Building2 className="text-emerald-600" />} />
+        <StatCard title="Pendentes" value={pedidos.filter(p => p.enviado === 'Não').length} icon={<Mail className="text-amber-600" />} />
+      </div>
+
+      <div className="bg-white p-4 rounded-t-2xl border border-slate-200 flex flex-col md:flex-row gap-4 items-center justify-between">
+        <div className="relative w-full md:w-96">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+          <input 
+            type="text" placeholder="Buscar por número, filial..."
+            className="w-full pl-10 pr-4 py-2 bg-slate-100 border-none rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+            value={busca} onChange={(e) => setBusca(e.target.value)}
+          />
+        </div>
+        <button onClick={abrirModal} className="w-full md:w-auto flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-xl transition-all font-bold text-sm uppercase tracking-tight">
+          <Plus size={18} /> Novo Pedido
+        </button>
+      </div>
+
+      <div className="bg-white rounded-b-2xl shadow-sm overflow-hidden overflow-x-auto border border-t-0 border-slate-200 mb-20">
+        <table className="w-full text-left">
+          <thead>
+            <tr className="bg-slate-50 text-slate-500 font-bold text-[10px] uppercase tracking-widest border-b border-slate-200">
+              <th className="px-6 py-4">Nº Pedido</th>
+              <th className="px-6 py-4">Valor</th>
+              <th className="px-6 py-4">Filial</th>
+              <th className="px-6 py-4">Mantenedora</th>
+              <th className="px-6 py-4 text-center">Status</th>
+              <th className="px-6 py-4 text-center">Enviado</th>
+              <th className="px-6 py-4 text-right">Ações</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {pedidosFiltrados.length > 0 ? pedidosFiltrados.map(p => (
+              <tr key={p.id} className="hover:bg-slate-50/50 transition-colors group">
+                <td className="px-6 py-4 font-bold text-slate-900 text-sm">#{p.numero}</td>
+                <td className="px-6 py-4 text-slate-600 text-sm font-semibold">
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.valor)}
+                </td>
+                <td className="px-6 py-4 text-slate-600 text-sm">{p.filial}</td>
+                <td className="px-6 py-4 text-slate-500 text-[10px] font-bold uppercase tracking-tighter">{p.mantenedora}</td>
+                <td className="px-6 py-4 text-center">
+                  <StatusBadge status={p.status} configs={statusDisponiveis} />
+                </td>
+                <td className="px-6 py-4 text-center">
+                  <button 
+                    onClick={() => toggleEnviado(p)}
+                    className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-black border shadow-sm transition-all ${
+                      p.enviado === 'Sim' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-400 border-slate-200'
+                    }`}
+                  >
+                    {p.enviado === 'Sim' && <Check size={12} strokeWidth={4} />}
+                    {p.enviado}
+                  </button>
+                </td>
+                <td className="px-6 py-4 text-right">
+                  <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => excluirPedido(p.id)} className="p-2 text-slate-300 hover:text-rose-600 transition-colors"><Trash2 size={16} /></button>
+                  </div>
+                </td>
+              </tr>
+            )) : (
+              <tr>
+                <td colSpan="7" className="px-6 py-12 text-center text-slate-400 text-sm italic font-medium">
+                  Nenhum pedido encontrado.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  const AdminView = () => {
+    const [newItem, setNewItem] = useState('');
+    const [newStatusColor, setNewStatusColor] = useState('indigo');
+
+    const handleAddFilial = () => {
+      if (newItem) addItemConfig('filiais', { nome: newItem });
+      setNewItem('');
+    };
+
+    const handleAddStatus = () => {
+      if (newItem) addItemConfig('status', { label: newItem, color: newStatusColor });
+      setNewItem('');
+    };
+
+    const handleAddMantenedora = () => {
+      if (newItem) addItemConfig('mantenedoras', { nome: newItem });
+      setNewItem('');
+    };
+
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in slide-in-from-bottom-4 duration-500">
+        <AdminCard title="Filiais" icon={<Building2 size={20}/>}>
+          <div className="flex gap-2 mb-4">
+            <input type="text" className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Nova filial..." value={newItem} onChange={(e) => setNewItem(e.target.value)} />
+            <button onClick={handleAddFilial} className="bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700"><Plus size={20}/></button>
+          </div>
+          <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+            {filiaisDisponiveis.map(f => (
+              <div key={f} className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
+                <span className="text-sm font-semibold text-slate-700">{f}</span>
+              </div>
+            ))}
+          </div>
+        </AdminCard>
+
+        <AdminCard title="Status" icon={<Tag size={20}/>}>
+          <div className="space-y-3 mb-4">
+            <input type="text" className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Nome do status..." value={newItem} onChange={(e) => setNewItem(e.target.value)} />
+            <div className="flex items-center gap-2">
+              {['indigo', 'emerald', 'rose', 'amber', 'blue'].map(c => (
+                <button key={c} onClick={() => setNewStatusColor(c)} className={`w-6 h-6 rounded-full border-2 ${newStatusColor === c ? 'border-slate-900 scale-110' : 'border-transparent opacity-60'}`} style={{ backgroundColor: c === 'emerald' ? '#10b981' : c === 'rose' ? '#f43f5e' : c === 'amber' ? '#f59e0b' : c === 'blue' ? '#3b82f6' : '#6366f1' }} />
+              ))}
+              <button onClick={handleAddStatus} className="ml-auto bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold text-[10px] uppercase tracking-tighter hover:bg-indigo-700">Adicionar</button>
+            </div>
+          </div>
+          <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+            {statusDisponiveis.map(s => (
+              <div key={s.id || s.label} className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
+                <div className="flex items-center gap-2">
+                   <div className={`w-2 h-2 rounded-full bg-${s.color}-500`} style={{ backgroundColor: s.color === 'emerald' ? '#10b981' : s.color === 'rose' ? '#f43f5e' : s.color === 'amber' ? '#f59e0b' : s.color === 'blue' ? '#3b82f6' : '#6366f1' }} />
+                  <span className="text-sm font-semibold text-slate-700">{s.label}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </AdminCard>
+
+        <AdminCard title="Mantenedoras" icon={<Briefcase size={20}/>}>
+          <div className="flex gap-2 mb-4">
+            <input type="text" className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Nome..." value={newItem} onChange={(e) => setNewItem(e.target.value)} />
+            <button onClick={handleAddMantenedora} className="bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700"><Plus size={20}/></button>
+          </div>
+          <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+            {mantenedoras.map(m => (
+              <div key={m} className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
+                <span className="text-sm font-semibold text-slate-700">{m}</span>
+              </div>
+            ))}
+          </div>
+        </AdminCard>
+      </div>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-20">
+      <nav className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="bg-indigo-600 p-2 rounded-lg text-white shadow-lg shadow-indigo-100">
+              <TrendingUp size={20} strokeWidth={3} />
+            </div>
+            <span className="font-black text-slate-900 tracking-tighter text-xl uppercase italic">OrderFlow</span>
+          </div>
+          <div className="flex bg-slate-100 p-1 rounded-xl">
+            <button onClick={() => setView('dashboard')} className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black tracking-widest transition-all ${view === 'dashboard' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 uppercase'}`}>
+              <LayoutDashboard size={14} /> DASHBOARD
+            </button>
+            <button onClick={() => setView('admin')} className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black tracking-widest transition-all ${view === 'admin' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 uppercase'}`}>
+              <Settings size={14} /> PAINEL ADM
+            </button>
+          </div>
+        </div>
+      </nav>
+
+      <main className="max-w-7xl mx-auto px-4 py-8">
+        <div className="mb-8 flex items-end justify-between">
+          <div>
+            <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tight leading-none">
+              {view === 'dashboard' ? 'Pedidos Ativos' : 'Configurações ADM'}
+            </h2>
+            <p className="text-slate-500 font-bold text-xs uppercase mt-2 opacity-60">
+              {view === 'dashboard' ? 'Gerenciamento de faturamento em tempo real' : 'Defina os parâmetros do sistema'}
+            </p>
+          </div>
+          <div className={`hidden sm:flex items-center gap-2 text-[10px] font-bold px-3 py-1 rounded-full border transition-all ${user ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-rose-50 text-rose-600 border-rose-100'}`}>
+            <div className={`w-1.5 h-1.5 rounded-full ${user ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+            {user ? 'CONECTADO AO FIREBASE' : 'DESCONECTADO'}
+          </div>
+        </div>
+
+        {view === 'dashboard' ? <DashboardView /> : <AdminView />}
+      </main>
+
+      {/* Modal Novo Pedido */}
+      {showModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in duration-300">
+            <div className="px-8 py-6 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+              <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Novo Registro</h2>
+              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 p-2 hover:bg-slate-200 rounded-full transition-all">
+                <X size={24} />
+              </button>
+            </div>
+            <form onSubmit={handleAddPedido} className="p-8 space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nº Pedido</label>
+                  <input required type="text" className="w-full px-4 py-3 rounded-2xl bg-slate-100 border-none outline-none font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 transition-all" value={novoPedido.numero} onChange={(e) => setNovoPedido({...novoPedido, numero: e.target.value})} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Valor (R$)</label>
+                  <input required type="text" className="w-full px-4 py-3 rounded-2xl bg-slate-100 border-none outline-none font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 transition-all" value={novoPedido.valor} onChange={(e) => setNovoPedido({...novoPedido, valor: e.target.value})} placeholder="0,00" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Filial</label>
+                  <div className="relative">
+                    <select className="w-full appearance-none px-4 py-3 rounded-2xl bg-slate-100 border-none font-bold text-slate-700 cursor-pointer focus:ring-2 focus:ring-indigo-500" value={novoPedido.filial} onChange={(e) => setNovoPedido({...novoPedido, filial: e.target.value})}>
+                      {filiaisDisponiveis.map(f => <option key={f} value={f}>{f}</option>)}
+                    </select>
+                    <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Mantenedora</label>
+                  <div className="relative">
+                    <select className="w-full appearance-none px-4 py-3 rounded-2xl bg-slate-100 border-none font-bold text-slate-700 cursor-pointer focus:ring-2 focus:ring-indigo-500" value={novoPedido.mantenedora} onChange={(e) => setNovoPedido({...novoPedido, mantenedora: e.target.value})}>
+                      {mantenedoras.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                    <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4 border-t border-slate-50 pt-6">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Status Inicial</label>
+                  <div className="relative">
+                    <select className="w-full appearance-none px-4 py-3 rounded-2xl bg-slate-100 border-none font-bold text-slate-700 cursor-pointer focus:ring-2 focus:ring-indigo-500" value={novoPedido.status} onChange={(e) => setNovoPedido({...novoPedido, status: e.target.value})}>
+                      {statusDisponiveis.map(s => <option key={s.label} value={s.label}>{s.label}</option>)}
+                    </select>
+                    <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Já Enviado?</label>
+                  <div className="relative">
+                    <select className="w-full appearance-none px-4 py-3 rounded-2xl bg-slate-100 border-none font-bold text-slate-700 cursor-pointer focus:ring-2 focus:ring-indigo-500" value={novoPedido.enviado} onChange={(e) => setNovoPedido({...novoPedido, enviado: e.target.value})}>
+                      <option value="Não">Não</option>
+                      <option value="Sim">Sim</option>
+                    </select>
+                    <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                </div>
+              </div>
+              <div className="pt-4 flex gap-4">
+                <button type="button" onClick={() => setShowModal(false)} className="flex-1 px-4 py-4 rounded-2xl border border-slate-200 text-slate-500 font-black uppercase text-[10px] tracking-widest hover:bg-slate-50 transition-all">Cancelar</button>
+                <button type="submit" className="flex-1 px-4 py-4 rounded-2xl bg-indigo-600 text-white font-black uppercase text-[10px] tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all active:scale-95">Salvar Registro</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// --- COMPONENTES AUXILIARES ---
+
+const StatCard = ({ title, value, icon }) => (
+  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center justify-between group hover:border-indigo-500 transition-all duration-300">
+    <div>
+      <p className="text-slate-400 text-[9px] font-black uppercase tracking-widest mb-1">{title}</p>
+      <h3 className="text-2xl font-black text-slate-900 tracking-tight group-hover:text-indigo-600 transition-colors">{value}</h3>
+    </div>
+    <div className="bg-slate-50 p-3 rounded-2xl group-hover:bg-indigo-50 transition-colors">
+      {React.cloneElement(icon, { size: 22, strokeWidth: 2.5 })}
+    </div>
+  </div>
+);
+
+const AdminCard = ({ title, icon, children }) => (
+  <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm flex flex-col h-full border-t-4 border-t-indigo-500">
+    <div className="flex items-center gap-2 mb-6 border-b border-slate-100 pb-4">
+      <div className="text-indigo-600">{icon}</div>
+      <h3 className="font-black text-slate-900 uppercase text-xs tracking-widest">{title}</h3>
+    </div>
+    <div className="flex-1">
+      {children}
+    </div>
+  </div>
+);
+
+const StatusBadge = ({ status, configs }) => {
+  const config = configs.find(c => c.label === status) || { color: 'slate' };
+  const colorMap = {
+    emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    rose: 'bg-rose-50 text-rose-700 border-rose-200',
+    amber: 'bg-amber-50 text-amber-700 border-amber-200',
+    indigo: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    blue: 'bg-blue-50 text-blue-700 border-blue-200',
+    slate: 'bg-slate-50 text-slate-700 border-slate-200',
+  };
+  return (
+    <span className={`inline-flex items-center px-3 py-1 rounded-full text-[9px] font-black uppercase border tracking-tight ${colorMap[config.color] || colorMap.slate}`}>
+      {status}
+    </span>
+  );
+};
+
+export default App;
