@@ -18,7 +18,7 @@
     <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const firebaseConfig = {
@@ -34,11 +34,13 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const appId = "controle-pedidos-4feb7";
+        
+        // Determinar o App ID correto para o caminho do Firestore
+        const appId = typeof __app_id !== 'undefined' ? __app_id : "controle-de-pedidos-4feb7";
 
         window.FB = { 
             db, auth, collection, doc, addDoc, updateDoc, deleteDoc, 
-            onSnapshot, query, orderBy, appId, signInAnonymously, onAuthStateChanged
+            onSnapshot, query, orderBy, appId, signInAnonymously, onAuthStateChanged, signInWithCustomToken
         };
     </script>
 
@@ -54,7 +56,6 @@
             slate: { bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-200', dot: 'bg-slate-500' },
         };
 
-        // Componente de Ícone Seguro (Inline SVG) corrigido
         const Icon = ({ name, size = 20, className = "", strokeWidth = 2 }) => {
             const icons = {
                 'trending-up': <path d="m22 7-8.5 8.5-5-5L2 17M22 7h-6M22 7v6"/>,
@@ -108,56 +109,107 @@
             const [isLoading, setIsLoading] = useState(true);
             const [form, setForm] = useState({ numero: '', valor: '', filial: '', mantenedora: '', status: '', enviado: 'Não' });
 
+            // REGRA 3: Autenticação primeiro
             useEffect(() => {
                 if (!window.FB) return;
-                const { auth, onAuthStateChanged, signInAnonymously } = window.FB;
-                const unsubscribe = onAuthStateChanged(auth, async (u) => {
-                    if (!u) {
-                        try { await signInAnonymously(auth); } catch (err) { console.error(err); }
+                const { auth, onAuthStateChanged, signInAnonymously, signInWithCustomToken } = window.FB;
+                
+                const initAuth = async () => {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        try {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } catch (e) {
+                            await signInAnonymously(auth);
+                        }
+                    } else {
+                        await signInAnonymously(auth);
                     }
+                };
+
+                initAuth();
+                const unsubscribe = onAuthStateChanged(auth, (u) => {
                     setUser(u);
                     setIsLoading(false);
                 });
                 return () => unsubscribe();
             }, []);
 
+            // REGRA 1 e 2: Escuta de dados com ID de aplicação dinâmico
             useEffect(() => {
                 if (!user || !window.FB) return;
                 const { db, collection, appId, onSnapshot } = window.FB;
+                
                 const getRef = (name) => collection(db, 'artifacts', appId, 'public', 'data', name);
 
-                const unsubP = onSnapshot(getRef('pedidos'), (s) => setPedidos(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-                const unsubF = onSnapshot(getRef('filiais'), (s) => s.docs.length > 0 && setFiliais(s.docs.map(d => d.data().nome)));
-                const unsubS = onSnapshot(getRef('status'), (s) => s.docs.length > 0 && setStatusList(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-                const unsubM = onSnapshot(getRef('mantenedoras'), (s) => s.docs.length > 0 && setMantenedoras(s.docs.map(d => d.data().nome)));
+                const unsubP = onSnapshot(getRef('pedidos'), (s) => {
+                    setPedidos(s.docs.map(d => ({ id: d.id, ...d.data() })));
+                }, (err) => console.error("Erro Firestore (Pedidos):", err));
+
+                const unsubF = onSnapshot(getRef('filiais'), (s) => {
+                    if (s.docs.length > 0) setFiliais(s.docs.map(d => d.data().nome));
+                });
+
+                const unsubS = onSnapshot(getRef('status'), (s) => {
+                    if (s.docs.length > 0) setStatusList(s.docs.map(d => ({ id: d.id, ...d.data() })));
+                });
+
+                const unsubM = onSnapshot(getRef('mantenedoras'), (s) => {
+                    if (s.docs.length > 0) setMantenedoras(s.docs.map(d => d.data().nome));
+                });
 
                 return () => { unsubP(); unsubF(); unsubS(); unsubM(); };
             }, [user]);
 
             const salvarPedido = async (e) => {
                 e.preventDefault();
-                if (!window.FB) return;
+                if (!user || !window.FB) return;
                 const { db, collection, appId, addDoc } = window.FB;
+                
                 const v = typeof form.valor === 'string' ? parseFloat(form.valor.replace(',', '.')) : parseFloat(form.valor);
+                
                 try {
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'pedidos'), {
-                        ...form, valor: isNaN(v) ? 0 : v, createdAt: new Date().toISOString()
+                        ...form, 
+                        valor: isNaN(v) ? 0 : v, 
+                        createdAt: new Date().toISOString(),
+                        userId: user.uid
                     });
                     setShowModal(false);
-                } catch (err) { console.error(err); }
+                    setForm({ numero: '', valor: '', filial: filiais[0], mantenedora: mantenedoras[0], status: statusList[0].label, enviado: 'Não' });
+                } catch (err) {
+                    console.error("Falha ao salvar pedido:", err);
+                }
             };
 
             const alternarEnvio = async (p) => {
-                if (!window.FB) return;
+                if (!user || !window.FB) return;
                 const { db, doc, appId, updateDoc } = window.FB;
-                const r = doc(db, 'artifacts', appId, 'public', 'data', 'pedidos', p.id);
-                await updateDoc(r, { enviado: p.enviado === 'Sim' ? 'Não' : 'Sim' });
+                try {
+                    const r = doc(db, 'artifacts', appId, 'public', 'data', 'pedidos', p.id);
+                    await updateDoc(r, { enviado: p.enviado === 'Sim' ? 'Não' : 'Sim' });
+                } catch (err) {
+                    console.error("Falha ao atualizar envio:", err);
+                }
             };
 
             const removerPedido = async (id) => {
-                if (!window.FB) return;
+                if (!user || !window.FB) return;
                 const { db, doc, appId, deleteDoc } = window.FB;
-                await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'pedidos', id));
+                try {
+                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'pedidos', id));
+                } catch (err) {
+                    console.error("Falha ao remover pedido:", err);
+                }
+            };
+
+            const addConfigItem = async (collName, data) => {
+                if (!user || !window.FB) return;
+                const { db, collection, appId, addDoc } = window.FB;
+                try {
+                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', collName), data);
+                } catch (err) {
+                    console.error(`Erro ao adicionar ${collName}:`, err);
+                }
             };
 
             const filtrados = useMemo(() => {
@@ -168,9 +220,9 @@
             }, [pedidos, busca]);
 
             if (isLoading) return (
-                <div className="flex flex-col items-center justify-center h-screen bg-white">
-                    <Icon name="refresh-cw" className="animate-spin text-indigo-600 mb-4" size={40} />
-                    <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">Sincronizando...</p>
+                <div className="flex flex-col items-center justify-center h-screen bg-white text-indigo-600">
+                    <Icon name="refresh-cw" className="animate-spin mb-4" size={48} />
+                    <p className="text-slate-400 font-black text-xs uppercase tracking-[0.3em]">Autenticando...</p>
                 </div>
             );
 
@@ -193,11 +245,11 @@
                         <header className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
                             <div>
                                 <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tight leading-none">{view === 'dashboard' ? 'Gestão de Pedidos' : 'Configuração ADM'}</h1>
-                                <p className="text-slate-400 font-bold text-[10px] uppercase mt-2 tracking-widest">Acompanhamento em tempo real</p>
+                                <p className="text-slate-400 font-bold text-[10px] uppercase mt-2 tracking-widest">Base de dados: {window.FB?.appId}</p>
                             </div>
                             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border bg-white text-[9px] font-black uppercase tracking-widest text-slate-400">
-                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                {user ? 'Base de dados ligada' : 'A ligar...'}
+                                <div className={`w-1.5 h-1.5 rounded-full ${user ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                                {user ? 'Sincronizado' : 'Erro de Ligação'}
                             </div>
                         </header>
 
@@ -235,7 +287,7 @@
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-50">
-                                            {filtrados.map(p => (
+                                            {filtrados.length > 0 ? filtrados.map(p => (
                                                 <tr key={p.id} className="hover:bg-indigo-50/20 transition-colors">
                                                     <td className="px-6 py-4 font-black text-slate-900 text-sm">#{p.numero}</td>
                                                     <td className="px-6 py-4 text-indigo-600 text-sm font-bold">R$ {parseFloat(p.valor || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
@@ -251,16 +303,20 @@
                                                         <button onClick={() => removerPedido(p.id)} className="p-2 text-slate-200 hover:text-rose-500 transition-colors"><Icon name="trash-2" size={16} /></button>
                                                     </td>
                                                 </tr>
-                                            ))}
+                                            )) : (
+                                                <tr>
+                                                    <td colSpan="7" className="px-6 py-20 text-center text-slate-300 font-bold uppercase text-[10px] tracking-[0.2em]">Sem dados no Firestore</td>
+                                                </tr>
+                                            )}
                                         </tbody>
                                     </table>
                                 </div>
                             </div>
                         ) : (
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                                <AdminCard title="Filiais" icon="building-2" items={filiais} onAdd={(v) => addDoc(collection(window.FB.db, 'artifacts', window.FB.appId, 'public', 'data', 'filiais'), { nome: v })} />
-                                <AdminCard title="Status" icon="tag" items={statusList.map(s => s.label)} onAdd={(v) => addDoc(collection(window.FB.db, 'artifacts', window.FB.appId, 'public', 'data', 'status'), { label: v, color: 'indigo' })} />
-                                <AdminCard title="Mantenedoras" icon="briefcase" items={mantenedoras} onAdd={(v) => addDoc(collection(window.FB.db, 'artifacts', window.FB.appId, 'public', 'data', 'mantenedoras'), { nome: v })} />
+                                <AdminCard title="Filiais" icon="building-2" items={filiais} onAdd={(v) => addConfigItem('filiais', { nome: v })} />
+                                <AdminCard title="Status" icon="tag" items={statusList.map(s => s.label)} onAdd={(v) => addConfigItem('status', { label: v, color: 'indigo' })} />
+                                <AdminCard title="Mantenedoras" icon="briefcase" items={mantenedoras} onAdd={(v) => addConfigItem('mantenedoras', { nome: v })} />
                             </div>
                         )}
                     </main>
@@ -280,7 +336,7 @@
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Valor (R$)</label>
-                                            <input required type="text" value={form.valor} onChange={(e) => setForm({...form, valor: e.target.value})} className="w-full px-5 py-3 rounded-2xl bg-slate-50 border-none font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500" />
+                                            <input required type="text" value={form.valor} onChange={(e) => setForm({...form, valor: e.target.value})} placeholder="0,00" className="w-full px-5 py-3 rounded-2xl bg-slate-50 border-none font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500" />
                                         </div>
                                     </div>
                                     <div className="grid grid-cols-2 gap-4">
@@ -297,9 +353,24 @@
                                             </select>
                                         </div>
                                     </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-1">
+                                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Estado</label>
+                                            <select className="w-full px-5 py-3 rounded-2xl bg-slate-50 border-none font-bold text-slate-700 outline-none" value={form.status} onChange={(e) => setForm({...form, status: e.target.value})}>
+                                                {statusList.map(o => <option key={o.label} value={o.label}>{o.label}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Enviado</label>
+                                            <select className="w-full px-5 py-3 rounded-2xl bg-slate-50 border-none font-bold text-slate-700 outline-none" value={form.enviado} onChange={(e) => setForm({...form, enviado: e.target.value})}>
+                                                <option value="Não">Não</option>
+                                                <option value="Sim">Sim</option>
+                                            </select>
+                                        </div>
+                                    </div>
                                     <div className="pt-4 flex gap-3">
                                         <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-4 rounded-2xl border border-slate-100 text-slate-400 font-black uppercase text-[10px]">Cancelar</button>
-                                        <button type="submit" className="flex-1 py-4 rounded-2xl bg-indigo-600 text-white font-black uppercase text-[10px] shadow-xl shadow-indigo-100">Guardar</button>
+                                        <button type="submit" className="flex-1 py-4 rounded-2xl bg-indigo-600 text-white font-black uppercase text-[10px] shadow-xl shadow-indigo-100">Guardar Pedido</button>
                                     </div>
                                 </form>
                             </div>
