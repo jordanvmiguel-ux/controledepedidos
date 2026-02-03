@@ -38,11 +38,21 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'controle-pedidos-4feb7';
 
+// Mapeamento de Cores Seguro para Tailwind
+const COLOR_MAP = {
+  emerald: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500' },
+  rose: { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200', dot: 'bg-rose-500' },
+  amber: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', dot: 'bg-amber-500' },
+  indigo: { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200', dot: 'bg-indigo-500' },
+  blue: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', dot: 'bg-blue-500' },
+  slate: { bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-200', dot: 'bg-slate-500' },
+};
+
 const App = () => {
   const [user, setUser] = useState(null);
   const [view, setView] = useState('dashboard');
   
-  // Estados de Dados (Sincronizados com Firestore)
+  // Estados de Dados
   const [pedidos, setPedidos] = useState([]);
   const [mantenedoras, setMantenedoras] = useState([]);
   const [filiaisDisponiveis, setFiliaisDisponiveis] = useState([]);
@@ -56,16 +66,14 @@ const App = () => {
     numero: '', valor: '', filial: '', mantenedora: '', status: '', enviado: 'Não'
   });
 
-  // 1. Efeito de Autenticação com Fallback para Erros de Token (REGRA 3)
+  // Autenticação
   useEffect(() => {
     const initAuth = async () => {
       try {
-        // Tenta usar o token customizado se existir
         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
           try {
             await signInWithCustomToken(auth, __initial_auth_token);
           } catch (tokenErr) {
-            // Se falhar o mismatch de token, tenta anônimo
             console.warn("Token falhou, tentando login anônimo...", tokenErr.message);
             await signInAnonymously(auth);
           }
@@ -83,11 +91,10 @@ const App = () => {
     return () => unsubscribe();
   }, []);
 
-  // 2. Efeito de Escuta de Dados (REGRA 1 e 2)
+  // Escuta de Dados
   useEffect(() => {
     if (!user) return;
 
-    // Referências das coleções seguindo a REGRA 1
     const colPedidos = collection(db, 'artifacts', appId, 'public', 'data', 'pedidos');
     const colFiliais = collection(db, 'artifacts', appId, 'public', 'data', 'filiais');
     const colStatus = collection(db, 'artifacts', appId, 'public', 'data', 'status');
@@ -95,37 +102,32 @@ const App = () => {
 
     const unsubPedidos = onSnapshot(colPedidos, (snap) => {
       setPedidos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, (err) => console.error("Erro ao carregar pedidos:", err));
+    });
 
     const unsubFiliais = onSnapshot(colFiliais, (snap) => {
       const data = snap.docs.map(d => d.data().nome);
       if (data.length > 0) setFiliaisDisponiveis(data);
-    }, (err) => console.error("Erro ao carregar filiais:", err));
+    });
 
     const unsubStatus = onSnapshot(colStatus, (snap) => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       if (data.length > 0) setStatusDisponiveis(data);
-    }, (err) => console.error("Erro ao carregar status:", err));
+    });
 
     const unsubMantenedoras = onSnapshot(colMantenedoras, (snap) => {
       const data = snap.docs.map(d => d.data().nome);
       if (data.length > 0) setMantenedoras(data);
-    }, (err) => console.error("Erro ao carregar mantenedoras:", err));
+    });
 
     return () => {
-      unsubPedidos();
-      unsubFiliais();
-      unsubStatus();
-      unsubMantenedoras();
+      unsubPedidos(); unsubFiliais(); unsubStatus(); unsubMantenedoras();
     };
   }, [user]);
 
-  // --- LÓGICA DE PERSISTÊNCIA ---
-
+  // Lógica de Persistência
   const handleAddPedido = async (e) => {
     e.preventDefault();
     if (!user) return;
-    
     const valorTratado = typeof novoPedido.valor === 'string' 
       ? parseFloat(novoPedido.valor.replace(',', '.')) 
       : parseFloat(novoPedido.valor);
@@ -144,44 +146,19 @@ const App = () => {
 
   const toggleEnviado = async (pedido) => {
     if (!user) return;
-    try {
-      const ref = doc(db, 'artifacts', appId, 'public', 'data', 'pedidos', pedido.id);
-      await updateDoc(ref, { enviado: pedido.enviado === 'Sim' ? 'Não' : 'Sim' });
-    } catch (err) {
-      console.error("Erro ao atualizar status de envio:", err);
-    }
+    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'pedidos', pedido.id);
+    await updateDoc(ref, { enviado: pedido.enviado === 'Sim' ? 'Não' : 'Sim' });
   };
 
   const excluirPedido = async (id) => {
     if (!user) return;
-    try {
-      const ref = doc(db, 'artifacts', appId, 'public', 'data', 'pedidos', id);
-      await deleteDoc(ref);
-    } catch (err) {
-      console.error("Erro ao excluir pedido:", err);
-    }
+    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'pedidos', id);
+    await deleteDoc(ref);
   };
 
-  // Funções ADM
   const addItemConfig = async (collectionName, data) => {
     if (!user) return;
-    try {
-      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', collectionName), data);
-    } catch (err) {
-      console.error(`Erro ao adicionar em ${collectionName}:`, err);
-    }
-  };
-
-  const abrirModal = () => {
-    setNovoPedido({
-      numero: '',
-      valor: '',
-      filial: filiaisDisponiveis[0] || '',
-      mantenedora: mantenedoras[0] || '',
-      status: statusDisponiveis[0]?.label || '',
-      enviado: 'Não'
-    });
-    setShowModal(true);
+    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', collectionName), data);
   };
 
   const pedidosFiltrados = useMemo(() => {
@@ -193,173 +170,19 @@ const App = () => {
     );
   }, [pedidos, busca]);
 
-  // --- VIEWS ---
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-4">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-          <p className="text-slate-500 font-bold text-sm animate-pulse">AUTENTICANDO...</p>
+          <p className="text-slate-500 font-bold text-sm">A LIGAR...</p>
         </div>
       </div>
     );
   }
 
-  const DashboardView = () => (
-    <div className="animate-in fade-in duration-500">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StatCard title="Total Pedidos" value={pedidos.length} icon={<FileText className="text-indigo-600" />} />
-        <StatCard title="Enviados" value={pedidos.filter(p => p.enviado === 'Sim').length} icon={<Send className="text-blue-600" />} />
-        <StatCard title="Filiais" value={filiaisDisponiveis.length} icon={<Building2 className="text-emerald-600" />} />
-        <StatCard title="Pendentes" value={pedidos.filter(p => p.enviado === 'Não').length} icon={<Mail className="text-amber-600" />} />
-      </div>
-
-      <div className="bg-white p-4 rounded-t-2xl border border-slate-200 flex flex-col md:flex-row gap-4 items-center justify-between">
-        <div className="relative w-full md:w-96">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-          <input 
-            type="text" placeholder="Buscar por número, filial..."
-            className="w-full pl-10 pr-4 py-2 bg-slate-100 border-none rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
-            value={busca} onChange={(e) => setBusca(e.target.value)}
-          />
-        </div>
-        <button onClick={abrirModal} className="w-full md:w-auto flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-xl transition-all font-bold text-sm uppercase tracking-tight">
-          <Plus size={18} /> Novo Pedido
-        </button>
-      </div>
-
-      <div className="bg-white rounded-b-2xl shadow-sm overflow-hidden overflow-x-auto border border-t-0 border-slate-200 mb-20">
-        <table className="w-full text-left">
-          <thead>
-            <tr className="bg-slate-50 text-slate-500 font-bold text-[10px] uppercase tracking-widest border-b border-slate-200">
-              <th className="px-6 py-4">Nº Pedido</th>
-              <th className="px-6 py-4">Valor</th>
-              <th className="px-6 py-4">Filial</th>
-              <th className="px-6 py-4">Mantenedora</th>
-              <th className="px-6 py-4 text-center">Status</th>
-              <th className="px-6 py-4 text-center">Enviado</th>
-              <th className="px-6 py-4 text-right">Ações</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {pedidosFiltrados.length > 0 ? pedidosFiltrados.map(p => (
-              <tr key={p.id} className="hover:bg-slate-50/50 transition-colors group">
-                <td className="px-6 py-4 font-bold text-slate-900 text-sm">#{p.numero}</td>
-                <td className="px-6 py-4 text-slate-600 text-sm font-semibold">
-                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.valor)}
-                </td>
-                <td className="px-6 py-4 text-slate-600 text-sm">{p.filial}</td>
-                <td className="px-6 py-4 text-slate-500 text-[10px] font-bold uppercase tracking-tighter">{p.mantenedora}</td>
-                <td className="px-6 py-4 text-center">
-                  <StatusBadge status={p.status} configs={statusDisponiveis} />
-                </td>
-                <td className="px-6 py-4 text-center">
-                  <button 
-                    onClick={() => toggleEnviado(p)}
-                    className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-black border shadow-sm transition-all ${
-                      p.enviado === 'Sim' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-400 border-slate-200'
-                    }`}
-                  >
-                    {p.enviado === 'Sim' && <Check size={12} strokeWidth={4} />}
-                    {p.enviado}
-                  </button>
-                </td>
-                <td className="px-6 py-4 text-right">
-                  <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => excluirPedido(p.id)} className="p-2 text-slate-300 hover:text-rose-600 transition-colors"><Trash2 size={16} /></button>
-                  </div>
-                </td>
-              </tr>
-            )) : (
-              <tr>
-                <td colSpan="7" className="px-6 py-12 text-center text-slate-400 text-sm italic font-medium">
-                  Nenhum pedido encontrado.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-
-  const AdminView = () => {
-    const [newItem, setNewItem] = useState('');
-    const [newStatusColor, setNewStatusColor] = useState('indigo');
-
-    const handleAddFilial = () => {
-      if (newItem) addItemConfig('filiais', { nome: newItem });
-      setNewItem('');
-    };
-
-    const handleAddStatus = () => {
-      if (newItem) addItemConfig('status', { label: newItem, color: newStatusColor });
-      setNewItem('');
-    };
-
-    const handleAddMantenedora = () => {
-      if (newItem) addItemConfig('mantenedoras', { nome: newItem });
-      setNewItem('');
-    };
-
-    return (
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in slide-in-from-bottom-4 duration-500">
-        <AdminCard title="Filiais" icon={<Building2 size={20}/>}>
-          <div className="flex gap-2 mb-4">
-            <input type="text" className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Nova filial..." value={newItem} onChange={(e) => setNewItem(e.target.value)} />
-            <button onClick={handleAddFilial} className="bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700"><Plus size={20}/></button>
-          </div>
-          <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
-            {filiaisDisponiveis.map(f => (
-              <div key={f} className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
-                <span className="text-sm font-semibold text-slate-700">{f}</span>
-              </div>
-            ))}
-          </div>
-        </AdminCard>
-
-        <AdminCard title="Status" icon={<Tag size={20}/>}>
-          <div className="space-y-3 mb-4">
-            <input type="text" className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Nome do status..." value={newItem} onChange={(e) => setNewItem(e.target.value)} />
-            <div className="flex items-center gap-2">
-              {['indigo', 'emerald', 'rose', 'amber', 'blue'].map(c => (
-                <button key={c} onClick={() => setNewStatusColor(c)} className={`w-6 h-6 rounded-full border-2 ${newStatusColor === c ? 'border-slate-900 scale-110' : 'border-transparent opacity-60'}`} style={{ backgroundColor: c === 'emerald' ? '#10b981' : c === 'rose' ? '#f43f5e' : c === 'amber' ? '#f59e0b' : c === 'blue' ? '#3b82f6' : '#6366f1' }} />
-              ))}
-              <button onClick={handleAddStatus} className="ml-auto bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold text-[10px] uppercase tracking-tighter hover:bg-indigo-700">Adicionar</button>
-            </div>
-          </div>
-          <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
-            {statusDisponiveis.map(s => (
-              <div key={s.id || s.label} className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
-                <div className="flex items-center gap-2">
-                   <div className={`w-2 h-2 rounded-full bg-${s.color}-500`} style={{ backgroundColor: s.color === 'emerald' ? '#10b981' : s.color === 'rose' ? '#f43f5e' : s.color === 'amber' ? '#f59e0b' : s.color === 'blue' ? '#3b82f6' : '#6366f1' }} />
-                  <span className="text-sm font-semibold text-slate-700">{s.label}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </AdminCard>
-
-        <AdminCard title="Mantenedoras" icon={<Briefcase size={20}/>}>
-          <div className="flex gap-2 mb-4">
-            <input type="text" className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Nome..." value={newItem} onChange={(e) => setNewItem(e.target.value)} />
-            <button onClick={handleAddMantenedora} className="bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700"><Plus size={20}/></button>
-          </div>
-          <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
-            {mantenedoras.map(m => (
-              <div key={m} className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
-                <span className="text-sm font-semibold text-slate-700">{m}</span>
-              </div>
-            ))}
-          </div>
-        </AdminCard>
-      </div>
-    );
-  };
-
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-20">
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-800 antialiased">
       <nav className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -369,100 +192,205 @@ const App = () => {
             <span className="font-black text-slate-900 tracking-tighter text-xl uppercase italic">OrderFlow</span>
           </div>
           <div className="flex bg-slate-100 p-1 rounded-xl">
-            <button onClick={() => setView('dashboard')} className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black tracking-widest transition-all ${view === 'dashboard' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 uppercase'}`}>
+            <button onClick={() => setView('dashboard')} className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black tracking-widest transition-all uppercase ${view === 'dashboard' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
               <LayoutDashboard size={14} /> DASHBOARD
             </button>
-            <button onClick={() => setView('admin')} className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black tracking-widest transition-all ${view === 'admin' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 uppercase'}`}>
-              <Settings size={14} /> PAINEL ADM
+            <button onClick={() => setView('admin')} className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black tracking-widest transition-all uppercase ${view === 'admin' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+              <Settings size={14} /> ADM
             </button>
           </div>
         </div>
       </nav>
 
       <main className="max-w-7xl mx-auto px-4 py-8">
-        <div className="mb-8 flex items-end justify-between">
+        <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
             <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tight leading-none">
-              {view === 'dashboard' ? 'Pedidos Ativos' : 'Configurações ADM'}
+              {view === 'dashboard' ? 'Pedidos Ativos' : 'Painel de Controlo'}
             </h2>
             <p className="text-slate-500 font-bold text-xs uppercase mt-2 opacity-60">
-              {view === 'dashboard' ? 'Gerenciamento de faturamento em tempo real' : 'Defina os parâmetros do sistema'}
+              {view === 'dashboard' ? 'Gerenciamento de faturamento em tempo real' : 'Configure os parâmetros do seu sistema'}
             </p>
           </div>
-          <div className={`hidden sm:flex items-center gap-2 text-[10px] font-bold px-3 py-1 rounded-full border transition-all ${user ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-rose-50 text-rose-600 border-rose-100'}`}>
-            <div className={`w-1.5 h-1.5 rounded-full ${user ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-            {user ? 'CONECTADO AO FIREBASE' : 'DESCONECTADO'}
+          <div className="flex items-center gap-2 text-[10px] font-bold px-3 py-1.5 rounded-full border bg-white shadow-sm self-start">
+            <div className={`w-2 h-2 rounded-full ${user ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+            <span className="opacity-70 uppercase">{user ? 'Conectado ao Firebase' : 'Desconectado'}</span>
           </div>
         </div>
 
-        {view === 'dashboard' ? <DashboardView /> : <AdminView />}
+        {view === 'dashboard' ? (
+          <div className="animate-in fade-in duration-500">
+            {/* Stats */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+              <StatCard title="Total Pedidos" value={pedidos.length} icon={<FileText className="text-indigo-600" />} />
+              <StatCard title="Enviados" value={pedidos.filter(p => p.enviado === 'Sim').length} icon={<Send className="text-blue-600" />} />
+              <StatCard title="Filiais" value={filiaisDisponiveis.length} icon={<Building2 className="text-emerald-600" />} />
+              <StatCard title="Pendentes" value={pedidos.filter(p => p.enviado === 'Não').length} icon={<Mail className="text-amber-600" />} />
+            </div>
+
+            {/* Toolbar */}
+            <div className="bg-white p-4 rounded-t-2xl border border-slate-200 flex flex-col md:flex-row gap-4 items-center justify-between shadow-sm">
+              <div className="relative w-full md:w-96">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <input 
+                  type="text" placeholder="Pesquisar pedido ou filial..."
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-medium"
+                  value={busca} onChange={(e) => setBusca(e.target.value)}
+                />
+              </div>
+              <button onClick={() => {
+                setNovoPedido({
+                  numero: '', valor: '', filial: filiaisDisponiveis[0] || '',
+                  mantenedora: mantenedoras[0] || '', status: statusDisponiveis[0]?.label || '', enviado: 'Não'
+                });
+                setShowModal(true);
+              }} className="w-full md:w-auto flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl transition-all font-black text-xs uppercase tracking-widest shadow-lg shadow-indigo-100">
+                <Plus size={16} /> Novo Pedido
+              </button>
+            </div>
+
+            {/* Table */}
+            <div className="bg-white rounded-b-2xl shadow-xl overflow-hidden border border-t-0 border-slate-200 mb-20">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left min-w-[800px]">
+                  <thead>
+                    <tr className="bg-slate-50/80 text-slate-500 font-bold text-[10px] uppercase tracking-widest border-b border-slate-200">
+                      <th className="px-6 py-4">Nº Pedido</th>
+                      <th className="px-6 py-4">Valor</th>
+                      <th className="px-6 py-4">Filial</th>
+                      <th className="px-6 py-4">Mantenedora</th>
+                      <th className="px-6 py-4 text-center">Status</th>
+                      <th className="px-6 py-4 text-center">Enviado</th>
+                      <th className="px-6 py-4 text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {pedidosFiltrados.length > 0 ? pedidosFiltrados.map(p => (
+                      <tr key={p.id} className="hover:bg-slate-50/50 transition-colors group">
+                        <td className="px-6 py-4 font-bold text-slate-900 text-sm">#{p.numero}</td>
+                        <td className="px-6 py-4 text-slate-700 text-sm font-semibold">
+                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.valor)}
+                        </td>
+                        <td className="px-6 py-4 text-slate-600 text-sm font-medium">{p.filial}</td>
+                        <td className="px-6 py-4 text-slate-400 text-[10px] font-black uppercase tracking-tighter">{p.mantenedora}</td>
+                        <td className="px-6 py-4 text-center">
+                          <StatusBadge status={p.status} configs={statusDisponiveis} />
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <button 
+                            onClick={() => toggleEnviado(p)}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black border shadow-sm transition-all ${
+                              p.enviado === 'Sim' ? 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100' : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            {p.enviado === 'Sim' && <Check size={12} strokeWidth={4} />}
+                            {p.enviado.toUpperCase()}
+                          </button>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <div className="flex items-center justify-end gap-2 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => excluirPedido(p.id)} className="p-2 text-slate-300 hover:text-rose-600 transition-colors bg-slate-50 md:bg-transparent rounded-lg"><Trash2 size={16} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    )) : (
+                      <tr>
+                        <td colSpan="7" className="px-6 py-20 text-center text-slate-400 text-sm font-medium italic">
+                          Nenhum pedido registado no sistema.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in slide-in-from-bottom-4 duration-500">
+            <AdminPanel 
+              title="Filiais" 
+              icon={<Building2 size={20}/>} 
+              items={filiaisDisponiveis} 
+              onAdd={(val) => addItemConfig('filiais', { nome: val })} 
+            />
+            <AdminPanel 
+              title="Status" 
+              icon={<Tag size={20}/>} 
+              items={statusDisponiveis.map(s => s.label)} 
+              onAdd={(val) => addItemConfig('status', { label: val, color: 'indigo' })} 
+            />
+            <AdminPanel 
+              title="Mantenedoras" 
+              icon={<Briefcase size={20}/>} 
+              items={mantenedoras} 
+              onAdd={(val) => addItemConfig('mantenedoras', { nome: val })} 
+            />
+          </div>
+        )}
       </main>
 
-      {/* Modal Novo Pedido */}
+      {/* Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in duration-300">
+          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in duration-300">
             <div className="px-8 py-6 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-              <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Novo Registro</h2>
-              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 p-2 hover:bg-slate-200 rounded-full transition-all">
+              <div>
+                <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Novo Pedido</h2>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Insira os dados da ordem</p>
+              </div>
+              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-rose-500 p-2 hover:bg-rose-50 rounded-full transition-all">
                 <X size={24} />
               </button>
             </div>
             <form onSubmit={handleAddPedido} className="p-8 space-y-6">
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nº Pedido</label>
-                  <input required type="text" className="w-full px-4 py-3 rounded-2xl bg-slate-100 border-none outline-none font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 transition-all" value={novoPedido.numero} onChange={(e) => setNovoPedido({...novoPedido, numero: e.target.value})} />
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Número</label>
+                  <input required type="text" className="w-full px-4 py-3 rounded-2xl bg-slate-50 border border-slate-200 outline-none font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 transition-all" value={novoPedido.numero} onChange={(e) => setNovoPedido({...novoPedido, numero: e.target.value})} />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Valor (R$)</label>
-                  <input required type="text" className="w-full px-4 py-3 rounded-2xl bg-slate-100 border-none outline-none font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 transition-all" value={novoPedido.valor} onChange={(e) => setNovoPedido({...novoPedido, valor: e.target.value})} placeholder="0,00" />
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Valor (R$)</label>
+                  <input required type="text" className="w-full px-4 py-3 rounded-2xl bg-slate-50 border border-slate-200 outline-none font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 transition-all" value={novoPedido.valor} onChange={(e) => setNovoPedido({...novoPedido, valor: e.target.value})} placeholder="0,00" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Filial</label>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Filial</label>
                   <div className="relative">
-                    <select className="w-full appearance-none px-4 py-3 rounded-2xl bg-slate-100 border-none font-bold text-slate-700 cursor-pointer focus:ring-2 focus:ring-indigo-500" value={novoPedido.filial} onChange={(e) => setNovoPedido({...novoPedido, filial: e.target.value})}>
+                    <select className="w-full appearance-none px-4 py-3 rounded-2xl bg-slate-50 border border-slate-200 font-bold text-slate-700 cursor-pointer focus:ring-2 focus:ring-indigo-500 outline-none" value={novoPedido.filial} onChange={(e) => setNovoPedido({...novoPedido, filial: e.target.value})}>
                       {filiaisDisponiveis.map(f => <option key={f} value={f}>{f}</option>)}
                     </select>
                     <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                   </div>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Mantenedora</label>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Mantenedora</label>
                   <div className="relative">
-                    <select className="w-full appearance-none px-4 py-3 rounded-2xl bg-slate-100 border-none font-bold text-slate-700 cursor-pointer focus:ring-2 focus:ring-indigo-500" value={novoPedido.mantenedora} onChange={(e) => setNovoPedido({...novoPedido, mantenedora: e.target.value})}>
+                    <select className="w-full appearance-none px-4 py-3 rounded-2xl bg-slate-50 border border-slate-200 font-bold text-slate-700 cursor-pointer focus:ring-2 focus:ring-indigo-500 outline-none" value={novoPedido.mantenedora} onChange={(e) => setNovoPedido({...novoPedido, mantenedora: e.target.value})}>
                       {mantenedoras.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
                     <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                   </div>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4 border-t border-slate-50 pt-6">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Status Inicial</label>
-                  <div className="relative">
-                    <select className="w-full appearance-none px-4 py-3 rounded-2xl bg-slate-100 border-none font-bold text-slate-700 cursor-pointer focus:ring-2 focus:ring-indigo-500" value={novoPedido.status} onChange={(e) => setNovoPedido({...novoPedido, status: e.target.value})}>
-                      {statusDisponiveis.map(s => <option key={s.label} value={s.label}>{s.label}</option>)}
-                    </select>
-                    <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                  </div>
+              <div className="grid grid-cols-2 gap-4 border-t border-slate-100 pt-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Status</label>
+                  <select className="w-full px-4 py-3 rounded-2xl bg-slate-50 border border-slate-200 font-bold text-slate-700" value={novoPedido.status} onChange={(e) => setNovoPedido({...novoPedido, status: e.target.value})}>
+                    {statusDisponiveis.map(s => <option key={s.label} value={s.label}>{s.label}</option>)}
+                  </select>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Já Enviado?</label>
-                  <div className="relative">
-                    <select className="w-full appearance-none px-4 py-3 rounded-2xl bg-slate-100 border-none font-bold text-slate-700 cursor-pointer focus:ring-2 focus:ring-indigo-500" value={novoPedido.enviado} onChange={(e) => setNovoPedido({...novoPedido, enviado: e.target.value})}>
-                      <option value="Não">Não</option>
-                      <option value="Sim">Sim</option>
-                    </select>
-                    <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                  </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Enviado</label>
+                  <select className="w-full px-4 py-3 rounded-2xl bg-slate-50 border border-slate-200 font-bold text-slate-700" value={novoPedido.enviado} onChange={(e) => setNovoPedido({...novoPedido, enviado: e.target.value})}>
+                    <option value="Não">Não</option>
+                    <option value="Sim">Sim</option>
+                  </select>
                 </div>
               </div>
               <div className="pt-4 flex gap-4">
                 <button type="button" onClick={() => setShowModal(false)} className="flex-1 px-4 py-4 rounded-2xl border border-slate-200 text-slate-500 font-black uppercase text-[10px] tracking-widest hover:bg-slate-50 transition-all">Cancelar</button>
-                <button type="submit" className="flex-1 px-4 py-4 rounded-2xl bg-indigo-600 text-white font-black uppercase text-[10px] tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all active:scale-95">Salvar Registro</button>
+                <button type="submit" className="flex-1 px-4 py-4 rounded-2xl bg-indigo-600 text-white font-black uppercase text-[10px] tracking-widest hover:bg-indigo-700 shadow-xl shadow-indigo-100 transition-all active:scale-95">Salvar Registo</button>
               </div>
             </form>
           </div>
@@ -486,30 +414,47 @@ const StatCard = ({ title, value, icon }) => (
   </div>
 );
 
-const AdminCard = ({ title, icon, children }) => (
-  <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm flex flex-col h-full border-t-4 border-t-indigo-500">
-    <div className="flex items-center gap-2 mb-6 border-b border-slate-100 pb-4">
-      <div className="text-indigo-600">{icon}</div>
-      <h3 className="font-black text-slate-900 uppercase text-xs tracking-widest">{title}</h3>
+const AdminPanel = ({ title, icon, items, onAdd }) => {
+  const [val, setVal] = useState('');
+  return (
+    <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm flex flex-col h-full border-t-4 border-t-indigo-500">
+      <div className="flex items-center gap-2 mb-6 border-b border-slate-100 pb-4">
+        <div className="text-indigo-600">{icon}</div>
+        <h3 className="font-black text-slate-900 uppercase text-xs tracking-widest">{title}</h3>
+      </div>
+      <div className="flex gap-2 mb-6">
+        <input 
+          type="text" 
+          className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm font-semibold outline-none focus:ring-2 focus:ring-indigo-500" 
+          placeholder={`Add ${title.toLowerCase()}...`}
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+        />
+        <button 
+          onClick={() => { if(val) { onAdd(val); setVal(''); } }}
+          className="bg-indigo-600 text-white p-2 rounded-xl hover:bg-indigo-700 transition-colors"
+        >
+          <Plus size={20}/>
+        </button>
+      </div>
+      <div className="space-y-2 overflow-y-auto max-h-[300px] pr-1">
+        {items.map((it, idx) => (
+          <div key={idx} className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100 group">
+            <span className="text-xs font-bold text-slate-700 uppercase">{it}</span>
+          </div>
+        ))}
+      </div>
     </div>
-    <div className="flex-1">
-      {children}
-    </div>
-  </div>
-);
+  );
+};
 
 const StatusBadge = ({ status, configs }) => {
-  const config = configs.find(c => c.label === status) || { color: 'slate' };
-  const colorMap = {
-    emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    rose: 'bg-rose-50 text-rose-700 border-rose-200',
-    amber: 'bg-amber-50 text-amber-700 border-amber-200',
-    indigo: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-    blue: 'bg-blue-50 text-blue-700 border-blue-200',
-    slate: 'bg-slate-50 text-slate-700 border-slate-200',
-  };
+  const configRaw = configs.find(c => c.label === status) || { color: 'slate' };
+  const styles = COLOR_MAP[configRaw.color] || COLOR_MAP.slate;
+
   return (
-    <span className={`inline-flex items-center px-3 py-1 rounded-full text-[9px] font-black uppercase border tracking-tight ${colorMap[config.color] || colorMap.slate}`}>
+    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[9px] font-black uppercase border tracking-tight shadow-sm ${styles.bg} ${styles.text} ${styles.border}`}>
+      <div className={`w-1.5 h-1.5 rounded-full ${styles.dot}`} />
       {status}
     </span>
   );
