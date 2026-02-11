@@ -1,1152 +1,1249 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  Plus, 
-  Search, 
-  Edit2, 
-  Trash2, 
-  Save, 
-  X, 
-  FileText, 
-  Building2, 
-  DollarSign, 
-  LayoutDashboard,
-  Filter,
-  CheckCircle2,
-  Clock,
-  XCircle,
-  Package, 
-  Tag,     
-  User,
-  Truck, 
-  Briefcase, 
-  Wrench, 
-  Box, 
-  Send,
-  MessageSquare, 
-  CheckSquare,   
-  Square,
-  Printer,       
-  Download,      
-  FileSpreadsheet 
-} from 'lucide-react';
-
-// Firebase Imports
-import { initializeApp } from 'firebase/app';
-import { 
-  getAuth, 
-  signInAnonymously, 
-  onAuthStateChanged,
-  signInWithCustomToken 
-} from 'firebase/auth';
-import { 
-  getFirestore, 
-  collection, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  doc, 
-  onSnapshot, 
-  serverTimestamp, 
-  query 
-} from 'firebase/firestore';
-
-// --- Configuração do Firebase ---
-const firebaseConfig = JSON.parse(__firebase_config);
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
-// --- Listas Fixas (Master Data) ---
-const LISTA_MANTENEDORAS = [
-  "AESMS", "ACESC", "AEI", "AESA", "AESGF", "AESJC", "AESPI", 
-  "APESU", "ASCEC", "ASPER", "ASSOBES", "AVIES", "BRICOR", 
-  "CESC", "CIESPT", "DI GENIO", "SINEC", "SUPERO", 
-  "SUPERO EC", "ASSUPERO", "ECEL"
-].sort();
-
-const LISTA_FILIAIS = [
-  "Alphaville", "Anchieta", "Araçatuba", "Araraquara", "Assis", 
-  "Bacelar", "Bauru", "Brasilia", "Campinas", "Cancioneiro", 
-  "Cid. Universitária", "Goiania Flamboyant", "Jundiai", "Limeira", 
-  "Manaus", "Marques S. Vicente", "Norte", "Paraiso", "Paulista", 
-  "Paz", "Paz / Henri Dunant", "Pinheiros", "Ribeirão Preto", 
-  "Santos", "São José do Rio Pardo", "São José dos Campos", 
-  "Sorocaba", "Taquari", "Tatuape", "Vergueiro", "São Jose do Rio Preto"
-].sort();
-
-// --- Componente Principal ---
-export default function App() {
-  const [user, setUser] = useState(null);
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [view, setView] = useState('list'); // 'list', 'form'
-  const [editingOrder, setEditingOrder] = useState(null);
-  const [currentUserProfile, setCurrentUserProfile] = useState('JORDAN'); // Padrão
-  const [showReport, setShowReport] = useState(false); // Estado do Modal de Relatório
-
-  // Autenticação
-  useEffect(() => {
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch (error) {
-        console.error("Erro na autenticação:", error);
-      }
-    };
-    initAuth();
-
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Carregar Dados (Firestore)
-  useEffect(() => {
-    if (!user) return;
-
-    const q = query(collection(db, 'artifacts', appId, 'users', user.uid, 'orders'));
-
-    const unsubscribe = onSnapshot(q, 
-      (snapshot) => {
-        const loadedOrders = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          createdAt: doc.data().createdAt?.toDate() || new Date()
-        }));
-        
-        loadedOrders.sort((a, b) => b.createdAt - a.createdAt);
-        
-        setOrders(loadedOrders);
-        setLoading(false);
-      },
-      (error) => {
-        console.error("Erro ao ler pedidos:", error);
-        setLoading(false);
-      }
-    );
-
-    return () => unsubscribe();
-  }, [user]);
-
-  // Ações CRUD
-  const handleSave = async (orderData) => {
-    if (!user) return;
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Controle de Pedidos Internos</title>
     
-    try {
-      const collectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'orders');
-
-      // Adiciona o perfil atual ao pedido se for novo
-      const dataToSave = {
-        ...orderData,
-        userProfile: orderData.userProfile || currentUserProfile
-      };
-
-      if (editingOrder) {
-        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'orders', editingOrder.id);
-        await updateDoc(docRef, {
-          ...dataToSave,
-          updatedAt: serverTimestamp()
-        });
-      } else {
-        await addDoc(collectionRef, {
-          ...dataToSave,
-          createdAt: serverTimestamp(),
-          completed: false 
-        });
-      }
-      setView('list');
-      setEditingOrder(null);
-    } catch (error) {
-      console.error("Erro ao salvar:", error);
-      alert("Erro ao salvar pedido. Tente novamente.");
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Import Map para resolver os módulos diretamente no navegador -->
+    <script type="importmap">
+    {
+        "imports": {
+            "react": "https://esm.sh/react@18.2.0",
+            "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+            "lucide-react": "https://esm.sh/lucide-react@0.263.1",
+            "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
+            "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js",
+            "firebase/firestore": "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js"
+        }
     }
-  };
+    </script>
 
-  const handleDelete = async (id) => {
-    if (!user || !window.confirm("Tem certeza que deseja excluir este pedido?")) return;
+    <!-- Babel para compilar JSX no navegador -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    try {
-      await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'orders', id));
-    } catch (error) {
-      console.error("Erro ao excluir:", error);
-    }
-  };
+    <style>
+        /* Ajustes finos para impressão */
+        @media print {
+            @page { margin: 0; size: auto; }
+            body { -webkit-print-color-adjust: exact; }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans">
+    
+    <!-- Ponto de montagem do React -->
+    <div id="root"></div>
 
-  const handleUpdateNote = async (id, newNote) => {
-    if (!user) return;
-    try {
-        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'orders', id);
-        await updateDoc(docRef, {
-            notes: newNote,
-            updatedAt: serverTimestamp()
-        });
-    } catch (error) {
-        console.error("Erro ao atualizar nota:", error);
-    }
-  };
+    <!-- CONFIGURAÇÃO DO FIREBASE -->
+    <script>
+        // Lógica para detecção de ambiente:
+        // 1. Se estiver rodando no ambiente de preview (Canvas), usa a config injetada (__firebase_config).
+        // 2. Se estiver rodando localmente (arquivo salvo), usa o objeto abaixo que você deve preencher.
+        
+        if (typeof window.__firebase_config === 'undefined' || !window.__firebase_config) {
+            // --- PREENCHA AQUI SE ESTIVER RODANDO FORA DO PREVIEW ---
+            window.__firebase_config = JSON.stringify({
+                apiKey: "", // Coloque sua API Key aqui
+                authDomain: "",
+                projectId: "",
+                storageBucket: "",
+                messagingSenderId: "",
+                appId: ""
+            });
+        }
+        
+        // Identificador do App e Token opcional
+        if (typeof window.__app_id === 'undefined') {
+            window.__app_id = "controle-pedidos-v1";
+        }
+    </script>
 
-  const handleToggleComplete = async (id, currentStatus) => {
-    if (!user) return;
-    try {
-        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'orders', id);
-        await updateDoc(docRef, {
-            completed: !currentStatus, 
-            updatedAt: serverTimestamp()
-        });
-    } catch (error) {
-        console.error("Erro ao atualizar status de conclusão:", error);
-    }
-  };
+    <!-- Código da Aplicação -->
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useMemo } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { 
+          Plus, 
+          Search, 
+          Edit2, 
+          Trash2, 
+          Save, 
+          X, 
+          FileText, 
+          Building2, 
+          DollarSign, 
+          LayoutDashboard,
+          Filter,
+          CheckCircle2,
+          Clock,
+          XCircle,
+          Package, 
+          Tag,     
+          User,
+          Truck, 
+          Briefcase, 
+          Wrench, 
+          Box, 
+          Send,
+          MessageSquare, 
+          CheckSquare,   
+          Square,
+          Printer,       
+          Download
+        } from 'lucide-react';
 
-  const startEdit = (order) => {
-    setEditingOrder(order);
-    setView('form');
-  };
+        // Firebase Imports
+        import { initializeApp } from 'firebase/app';
+        import { 
+          getAuth, 
+          signInAnonymously, 
+          onAuthStateChanged,
+          signInWithCustomToken 
+        } from 'firebase/auth';
+        import { 
+          getFirestore, 
+          collection, 
+          addDoc, 
+          updateDoc, 
+          deleteDoc, 
+          doc, 
+          onSnapshot, 
+          serverTimestamp, 
+          query 
+        } from 'firebase/firestore';
 
-  const startNew = () => {
-    setEditingOrder(null);
-    setView('form');
-  };
+        // --- Inicialização do Firebase Segura ---
+        let app, auth, db;
+        let firebaseError = null;
 
-  // --- Renderização ---
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-slate-500 flex flex-col items-center">
-          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-2"></div>
-          <p>Carregando sistema...</p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
-      {/* Header Fixo */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10 px-4 py-3 shadow-sm print:hidden">
-        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
-          
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <div className="bg-blue-600 p-2 rounded-lg text-white">
-              <FileText size={20} />
-            </div>
-            <div>
-              <h1 className="text-lg font-bold leading-tight text-slate-800">Controle de Pedidos</h1>
-              <p className="text-xs text-slate-500">Gestão Interna</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
-            {/* Seletor de Perfil */}
-            <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200">
-              <button
-                  onClick={() => setCurrentUserProfile('JORDAN')}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                    currentUserProfile === 'JORDAN' 
-                    ? 'bg-white text-blue-700 shadow-sm' 
-                    : 'text-slate-500 hover:text-slate-700'
-                  }`}
-              >
-                  JORDAN
-              </button>
-              <button
-                  onClick={() => setCurrentUserProfile('NELSON')}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                    currentUserProfile === 'NELSON' 
-                    ? 'bg-white text-blue-700 shadow-sm' 
-                    : 'text-slate-500 hover:text-slate-700'
-                  }`}
-              >
-                  NELSON
-              </button>
-            </div>
+        try {
+            const rawConfig = window.__firebase_config;
+            const firebaseConfig = typeof rawConfig === 'string' ? JSON.parse(rawConfig) : rawConfig;
             
-            {view === 'list' && (
-              <>
-                <button 
-                  onClick={() => setShowReport(true)}
-                  className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-3 py-2 rounded-lg flex items-center justify-center gap-2 text-sm font-medium transition-colors shadow-sm"
-                  title="Gerar Relatório"
-                >
-                  <FileSpreadsheet size={18} />
-                  <span className="hidden sm:inline">Relatório</span>
-                </button>
+            // Verificação básica se a config é válida
+            if (!firebaseConfig || !firebaseConfig.apiKey || firebaseConfig.apiKey === "SUA_API_KEY_AQUI") {
+                throw new Error("Configuração do Firebase ausente ou inválida.");
+            }
 
-                <button 
-                  onClick={startNew}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center justify-center gap-2 text-sm font-medium transition-colors shadow-sm active:scale-95"
-                >
-                  <Plus size={18} />
-                  <span>Novo Lançamento</span>
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      </header>
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+        } catch (e) {
+            console.error("Erro na inicialização do Firebase:", e);
+            firebaseError = e.message;
+        }
 
-      {/* Conteúdo Principal */}
-      <main className="max-w-6xl mx-auto p-4 print:p-0">
-        {view === 'list' ? (
-          <DashboardAndList 
-            orders={orders} 
-            onEdit={startEdit} 
-            onDelete={handleDelete}
-            onUpdateNote={handleUpdateNote}
-            onToggleComplete={handleToggleComplete} 
-            currentUserProfile={currentUserProfile}
-            showReport={showReport}
-            onCloseReport={() => setShowReport(false)}
-          />
-        ) : (
-          <OrderForm 
-            initialData={editingOrder} 
-            onSave={handleSave} 
-            currentUserProfile={currentUserProfile}
-            onCancel={() => {
+        const appId = typeof window.__app_id !== 'undefined' ? window.__app_id : 'default-app-id';
+
+        // --- Listas Fixas (Master Data) ---
+        const LISTA_MANTENEDORAS = [
+          "AESMS", "ACESC", "AEI", "AESA", "AESGF", "AESJC", "AESPI", 
+          "APESU", "ASCEC", "ASPER", "ASSOBES", "AVIES", "BRICOR", 
+          "CESC", "CIESPT", "DI GENIO", "SINEC", "SUPERO", 
+          "SUPERO EC", "ASSUPERO", "ECEL"
+        ].sort();
+
+        const LISTA_FILIAIS = [
+          "Alphaville", "Anchieta", "Araçatuba", "Araraquara", "Assis", 
+          "Bacelar", "Bauru", "Brasilia", "Campinas", "Cancioneiro", 
+          "Cid. Universitária", "Goiania Flamboyant", "Jundiai", "Limeira", 
+          "Manaus", "Marques S. Vicente", "Norte", "Paraiso", "Paulista", 
+          "Paz", "Paz / Henri Dunant", "Pinheiros", "Ribeirão Preto", 
+          "Santos", "São José do Rio Pardo", "São José dos Campos", 
+          "Sorocaba", "Taquari", "Tatuape", "Vergueiro", "São Jose do Rio Preto"
+        ].sort();
+
+        // --- Componente Principal ---
+        function App() {
+          const [user, setUser] = useState(null);
+          const [orders, setOrders] = useState([]);
+          const [loading, setLoading] = useState(true);
+          const [view, setView] = useState('list'); // 'list', 'form'
+          const [editingOrder, setEditingOrder] = useState(null);
+          const [currentUserProfile, setCurrentUserProfile] = useState('JORDAN'); // Padrão
+          const [showReport, setShowReport] = useState(false); // Estado do Modal de Relatório
+          const [authError, setAuthError] = useState(null);
+
+          // Autenticação
+          useEffect(() => {
+            if (firebaseError) {
+                setLoading(false);
+                return;
+            }
+
+            const initAuth = async () => {
+              try {
+                if (typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token) {
+                  await signInWithCustomToken(auth, window.__initial_auth_token);
+                } else {
+                  await signInAnonymously(auth);
+                }
+              } catch (error) {
+                console.error("Erro na autenticação:", error);
+                setAuthError(error.message);
+                setLoading(false);
+              }
+            };
+            initAuth();
+
+            const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+              setUser(currentUser);
+              if(currentUser) setLoading(false); // Stop loading when user is found
+            });
+            return () => unsubscribe();
+          }, []);
+
+          // Carregar Dados (Firestore)
+          useEffect(() => {
+            if (!user || !db) return;
+
+            const q = query(collection(db, 'artifacts', appId, 'users', user.uid, 'orders'));
+
+            const unsubscribe = onSnapshot(q, 
+              (snapshot) => {
+                const loadedOrders = snapshot.docs.map(doc => ({
+                  id: doc.id,
+                  ...doc.data(),
+                  createdAt: doc.data().createdAt?.toDate() || new Date()
+                }));
+                
+                // Ordenação em memória
+                loadedOrders.sort((a, b) => b.createdAt - a.createdAt);
+                
+                setOrders(loadedOrders);
+                setLoading(false);
+              },
+              (error) => {
+                console.error("Erro ao ler pedidos:", error);
+                setLoading(false);
+              }
+            );
+
+            return () => unsubscribe();
+          }, [user]);
+
+          // Ações CRUD
+          const handleSave = async (orderData) => {
+            if (!user || !db) return;
+            
+            try {
+              const collectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'orders');
+
+              // Adiciona o perfil atual ao pedido se for novo
+              const dataToSave = {
+                ...orderData,
+                userProfile: orderData.userProfile || currentUserProfile
+              };
+
+              if (editingOrder) {
+                const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'orders', editingOrder.id);
+                await updateDoc(docRef, {
+                  ...dataToSave,
+                  updatedAt: serverTimestamp()
+                });
+              } else {
+                await addDoc(collectionRef, {
+                  ...dataToSave,
+                  createdAt: serverTimestamp(),
+                  completed: false 
+                });
+              }
               setView('list');
               setEditingOrder(null);
-            }} 
-          />
-        )}
-      </main>
-    </div>
-  );
-}
+            } catch (error) {
+              console.error("Erro ao salvar:", error);
+              alert("Erro ao salvar pedido. Tente novamente.");
+            }
+          };
 
-// --- Componente: Modal de Relatório ---
-function ReportModal({ orders, onClose, currentUserProfile }) {
-  // Dados para exportação e visualização
-  const totalValue = orders.reduce((acc, curr) => acc + (parseFloat(curr.value) || 0), 0);
-  const totalCount = orders.length;
+          const handleDelete = async (id) => {
+            if (!user || !db || !window.confirm("Tem certeza que deseja excluir este pedido?")) return;
 
-  const formatDate = (dateObj) => {
-    if (!dateObj) return '-';
-    return new Intl.DateTimeFormat('pt-BR').format(dateObj);
-  };
+            try {
+              await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'orders', id));
+            } catch (error) {
+              console.error("Erro ao excluir:", error);
+            }
+          };
 
-  const formatCurrency = (val) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
-  };
+          const handleUpdateNote = async (id, newNote) => {
+            if (!user || !db) return;
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'orders', id);
+                await updateDoc(docRef, {
+                    notes: newNote,
+                    updatedAt: serverTimestamp()
+                });
+            } catch (error) {
+                console.error("Erro ao atualizar nota:", error);
+            }
+          };
 
-  const handlePrint = () => {
-    window.print();
-  };
+          const handleToggleComplete = async (id, currentStatus) => {
+            if (!user || !db) return;
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'orders', id);
+                await updateDoc(docRef, {
+                    completed: !currentStatus, 
+                    updatedAt: serverTimestamp()
+                });
+            } catch (error) {
+                console.error("Erro ao atualizar status de conclusão:", error);
+            }
+          };
 
-  const handleExportCSV = () => {
-    // Cabeçalho CSV
-    let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "Data;Numero;Filial;Mantenedora;Fornecedor;Tipo;Status;Valor;Responsavel;Observacoes;Concluido\r\n";
+          const startEdit = (order) => {
+            setEditingOrder(order);
+            setView('form');
+          };
 
-    // Linhas
-    orders.forEach(order => {
-      const row = [
-        formatDate(order.createdAt),
-        order.orderNumber,
-        order.branch,
-        order.maintainer,
-        order.supplier,
-        order.type,
-        order.status,
-        order.value?.toString().replace('.', ','), // Formato BR
-        order.userProfile,
-        (order.notes || '').replace(/;/g, ','), // Evitar quebra do CSV
-        order.completed ? 'SIM' : 'NAO'
-      ];
-      csvContent += row.join(";") + "\r\n";
-    });
+          const startNew = () => {
+            setEditingOrder(null);
+            setView('form');
+          };
 
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `Relatorio_Pedidos_${new Date().toLocaleDateString('pt-BR')}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
+          // --- Renderização ---
 
-  return (
-    <div className="fixed inset-0 z-50 bg-white sm:bg-slate-100 sm:p-4 overflow-y-auto">
-      <div className="max-w-5xl mx-auto bg-white min-h-screen sm:min-h-0 sm:rounded-xl shadow-none sm:shadow-2xl overflow-hidden flex flex-col">
-        
-        {/* Header do Relatório */}
-        <div className="bg-slate-800 text-white p-4 flex justify-between items-center print:hidden">
-          <div>
-            <h2 className="text-xl font-bold flex items-center gap-2">
-              <FileSpreadsheet /> Relatório de Lançamentos
-            </h2>
-            <p className="text-slate-400 text-sm">Visualização de impressão e exportação</p>
-          </div>
-          <div className="flex gap-2">
-            <button 
-              onClick={handleExportCSV}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium"
-            >
-              <Download size={16} /> CSV / Excel
-            </button>
-            <button 
-              onClick={handlePrint}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium"
-            >
-              <Printer size={16} /> Imprimir
-            </button>
-            <button 
-              onClick={onClose}
-              className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium"
-            >
-              <X size={16} /> Fechar
-            </button>
-          </div>
-        </div>
+          if (firebaseError || authError) {
+             return (
+                <div className="min-h-screen bg-red-50 flex items-center justify-center p-4">
+                    <div className="bg-white p-6 rounded-xl shadow-lg max-w-md text-center border border-red-100">
+                        <XCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                        <h2 className="text-xl font-bold text-slate-800 mb-2">Erro de Configuração</h2>
+                        <p className="text-slate-600 mb-4 text-sm">
+                            {firebaseError ? "Configuração do Firebase inválida." : "Erro na autenticação com Firebase."}
+                        </p>
+                        <div className="bg-slate-100 p-3 rounded text-xs text-left font-mono text-slate-600 overflow-x-auto">
+                            {firebaseError || authError}
+                        </div>
+                        <p className="mt-4 text-xs text-slate-500">
+                            Se estiver rodando este arquivo localmente, abra o código e preencha o bloco <code>window.__firebase_config</code> com suas credenciais do Firebase.
+                        </p>
+                    </div>
+                </div>
+             );
+          }
 
-        {/* Área Imprimível */}
-        <div className="p-8 print:p-0 bg-white" id="printable-area">
-          <div className="mb-6 border-b pb-4">
-            <h1 className="text-2xl font-bold text-slate-900 mb-1">Relatório Geral de Pedidos</h1>
-            <div className="flex justify-between text-sm text-slate-500">
-              <span>Gerado em: {new Date().toLocaleString('pt-BR')}</span>
-              <span>Total de Registros: {totalCount}</span>
+          if (loading) {
+            return (
+              <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+                <div className="text-slate-500 flex flex-col items-center">
+                  <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-2"></div>
+                  <p>Carregando sistema...</p>
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
+              {/* Header Fixo */}
+              <header className="bg-white border-b border-slate-200 sticky top-0 z-10 px-4 py-3 shadow-sm print:hidden">
+                <div className="max-w-6xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
+                  
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <div className="bg-blue-600 p-2 rounded-lg text-white">
+                      <FileText size={20} />
+                    </div>
+                    <div>
+                      <h1 className="text-lg font-bold leading-tight text-slate-800">Controle de Pedidos</h1>
+                      <p className="text-xs text-slate-500">Gestão Interna</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+                    {/* Seletor de Perfil */}
+                    <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200">
+                      <button
+                          onClick={() => setCurrentUserProfile('JORDAN')}
+                          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                            currentUserProfile === 'JORDAN' 
+                            ? 'bg-white text-blue-700 shadow-sm' 
+                            : 'text-slate-500 hover:text-slate-700'
+                          }`}
+                      >
+                          JORDAN
+                      </button>
+                      <button
+                          onClick={() => setCurrentUserProfile('NELSON')}
+                          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                            currentUserProfile === 'NELSON' 
+                            ? 'bg-white text-blue-700 shadow-sm' 
+                            : 'text-slate-500 hover:text-slate-700'
+                          }`}
+                      >
+                          NELSON
+                      </button>
+                    </div>
+                    
+                    {view === 'list' && (
+                      <>
+                        <button 
+                          onClick={() => setShowReport(true)}
+                          className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-3 py-2 rounded-lg flex items-center justify-center gap-2 text-sm font-medium transition-colors shadow-sm"
+                          title="Gerar Relatório"
+                        >
+                          <FileText size={18} />
+                          <span className="hidden sm:inline">Relatório</span>
+                        </button>
+
+                        <button 
+                          onClick={startNew}
+                          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center justify-center gap-2 text-sm font-medium transition-colors shadow-sm active:scale-95"
+                        >
+                          <Plus size={18} />
+                          <span>Novo Lançamento</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </header>
+
+              {/* Conteúdo Principal */}
+              <main className="max-w-6xl mx-auto p-4 print:p-0">
+                {view === 'list' ? (
+                  <DashboardAndList 
+                    orders={orders} 
+                    onEdit={startEdit} 
+                    onDelete={handleDelete}
+                    onUpdateNote={handleUpdateNote}
+                    onToggleComplete={handleToggleComplete} 
+                    currentUserProfile={currentUserProfile}
+                    showReport={showReport}
+                    onCloseReport={() => setShowReport(false)}
+                  />
+                ) : (
+                  <OrderForm 
+                    initialData={editingOrder} 
+                    onSave={handleSave} 
+                    currentUserProfile={currentUserProfile}
+                    onCancel={() => {
+                      setView('list');
+                      setEditingOrder(null);
+                    }} 
+                  />
+                )}
+              </main>
             </div>
-          </div>
-
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="border-b-2 border-slate-800 text-slate-800 font-bold uppercase">
-                <th className="py-2 pr-2">Data</th>
-                <th className="py-2 pr-2">Pedido</th>
-                <th className="py-2 pr-2">Filial</th>
-                <th className="py-2 pr-2">Mantenedora</th>
-                <th className="py-2 pr-2">Forn.</th>
-                <th className="py-2 pr-2">Tipo</th>
-                <th className="py-2 pr-2">Status</th>
-                <th className="py-2 pr-2 text-right">Valor</th>
-                <th className="py-2 pl-2">Resp.</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map((order, index) => (
-                <tr key={order.id} className={`border-b border-slate-200 ${index % 2 === 0 ? 'bg-slate-50 print:bg-transparent' : ''}`}>
-                  <td className="py-2 pr-2 whitespace-nowrap">{formatDate(order.createdAt)}</td>
-                  <td className="py-2 pr-2 font-medium">#{order.orderNumber}</td>
-                  <td className="py-2 pr-2 truncate max-w-[120px]">{order.branch}</td>
-                  <td className="py-2 pr-2 truncate max-w-[100px]">{order.maintainer}</td>
-                  <td className="py-2 pr-2 truncate max-w-[100px]">{order.supplier}</td>
-                  <td className="py-2 pr-2">{order.type}</td>
-                  <td className="py-2 pr-2">
-                    <span className="capitalize">{order.status}</span>
-                    {order.completed && <span className="ml-1 font-bold text-emerald-600">(OK)</span>}
-                  </td>
-                  <td className="py-2 pr-2 text-right font-medium">{formatCurrency(order.value)}</td>
-                  <td className="py-2 pl-2">{order.userProfile}</td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="border-t-2 border-slate-800 font-bold text-sm bg-slate-50 print:bg-transparent">
-                <td colSpan="7" className="py-3 text-right pr-4">TOTAL GERAL:</td>
-                <td className="py-3 text-right text-slate-900">{formatCurrency(totalValue)}</td>
-                <td></td>
-              </tr>
-            </tfoot>
-          </table>
-
-          <div className="mt-8 text-center text-xs text-slate-400 print:block hidden">
-            <p>Relatório gerado pelo Sistema de Controle de Pedidos Internos</p>
-          </div>
-        </div>
-      </div>
-      
-      <style>{`
-        @media print {
-          body * {
-            visibility: hidden;
-          }
-          #printable-area, #printable-area * {
-            visibility: visible;
-          }
-          #printable-area {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            padding: 20px;
-          }
-          @page {
-            size: auto;
-            margin: 0mm;
-          }
+          );
         }
-      `}</style>
-    </div>
-  );
-}
 
-// --- Componente: Dashboard e Lista ---
-function DashboardAndList({ orders, onEdit, onDelete, onUpdateNote, onToggleComplete, currentUserProfile, showReport, onCloseReport }) {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [noteModalOpen, setNoteModalOpen] = useState(false);
-  const [selectedOrderForNote, setSelectedOrderForNote] = useState(null);
-  const [currentNoteText, setCurrentNoteText] = useState('');
+        // --- Componente: Modal de Relatório ---
+        function ReportModal({ orders, onClose, currentUserProfile }) {
+          // Dados para exportação e visualização
+          const totalValue = orders.reduce((acc, curr) => acc + (parseFloat(curr.value) || 0), 0);
+          const totalCount = orders.length;
 
-  // Filtros
-  const [filterBranch, setFilterBranch] = useState('');
-  const [filterType, setFilterType] = useState('');
-  const [filterMaintainer, setFilterMaintainer] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
-  const [filterUser, setFilterUser] = useState('');
-  
-  useEffect(() => {
-    setFilterUser(currentUserProfile);
-  }, [currentUserProfile]);
+          const formatDate = (dateObj) => {
+            if (!dateObj) return '-';
+            return new Intl.DateTimeFormat('pt-BR').format(dateObj);
+          };
 
-  const openNoteModal = (order) => {
-    setSelectedOrderForNote(order);
-    setCurrentNoteText(order.notes || '');
-    setNoteModalOpen(true);
-  };
+          const formatCurrency = (val) => {
+            return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+          };
 
-  const saveNoteFromModal = async () => {
-    if (selectedOrderForNote) {
-        await onUpdateNote(selectedOrderForNote.id, currentNoteText);
-        setNoteModalOpen(false);
-        setSelectedOrderForNote(null);
-    }
-  };
+          const handlePrint = () => {
+            window.print();
+          };
 
-  const filteredOrders = useMemo(() => {
-    return orders.filter(order => {
-      const term = searchTerm.toLowerCase();
-      const matchesSearch = 
-        order.orderNumber?.toLowerCase().includes(term) ||
-        order.branch?.toLowerCase().includes(term) ||
-        order.supplier?.toLowerCase().includes(term) ||
-        order.maintainer?.toLowerCase().includes(term);
-      
-      const matchesBranch = filterBranch ? order.branch === filterBranch : true;
-      const matchesStatus = filterStatus ? order.status === filterStatus : true;
-      const matchesMaintainer = filterMaintainer ? order.maintainer === filterMaintainer : true;
-      const matchesType = filterType ? order.type === filterType : true;
-      const matchesUser = filterUser ? (order.userProfile === filterUser) : true;
-      
-      return matchesSearch && matchesBranch && matchesStatus && matchesMaintainer && matchesType && matchesUser;
-    });
-  }, [orders, searchTerm, filterBranch, filterStatus, filterMaintainer, filterType, filterUser]);
+          const handleExportCSV = () => {
+            // Cabeçalho CSV
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += "Data;Numero;Filial;Mantenedora;Fornecedor;Tipo;Status;Valor;Responsavel;Observacoes;Concluido\r\n";
 
-  const summary = useMemo(() => {
-    const listToCalc = filteredOrders;
-    const totalValue = listToCalc.reduce((acc, curr) => {
-      if (curr.status === 'reprovado Enio') return acc;
-      return acc + (parseFloat(curr.value) || 0);
-    }, 0);
-    
-    return {
-      count: listToCalc.length,
-      total: totalValue,
-      pending: listToCalc.filter(o => o.status === 'ag. aprovação' || o.status === 'aguardando justificativa').length
-    };
-  }, [filteredOrders]);
+            // Linhas
+            orders.forEach(order => {
+              const row = [
+                formatDate(order.createdAt),
+                order.orderNumber,
+                order.branch,
+                order.maintainer,
+                order.supplier,
+                order.type,
+                order.status,
+                order.value?.toString().replace('.', ','), // Formato BR
+                order.userProfile,
+                (order.notes || '').replace(/;/g, ','), // Evitar quebra do CSV
+                order.completed ? 'SIM' : 'NAO'
+              ];
+              csvContent += row.join(";") + "\r\n";
+            });
 
-  // COMBINAR AS LISTAS FIXAS COM VALORES EXISTENTES
-  const branches = useMemo(() => {
-      const existing = new Set(orders.map(o => o.branch).filter(Boolean));
-      LISTA_FILIAIS.forEach(b => existing.add(b));
-      return [...existing].sort();
-  }, [orders]);
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `Relatorio_Pedidos_${new Date().toLocaleDateString('pt-BR')}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          };
 
-  const maintainers = useMemo(() => {
-      const existing = new Set(orders.map(o => o.maintainer).filter(Boolean));
-      LISTA_MANTENEDORAS.forEach(m => existing.add(m));
-      return [...existing].sort();
-  }, [orders]);
-
-  const formatCurrency = (val) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
-  };
-
-  const formatDate = (dateObj) => {
-    if (!dateObj) return '-';
-    return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit' }).format(dateObj);
-  };
-
-  const StatusBadge = ({ status }) => {
-    let style = "";
-    let icon = null;
-    let label = status;
-
-    switch (status) {
-      case 'aprovado':
-        style = "bg-emerald-100 text-emerald-700 border-emerald-200";
-        icon = <CheckCircle2 size={12} />;
-        label = "Aprovado";
-        break;
-      case 'enviado':
-        style = "bg-blue-100 text-blue-700 border-blue-200";
-        icon = <Send size={12} />;
-        label = "Enviado";
-        break;
-      case 'ag. aprovação':
-        style = "bg-amber-100 text-amber-700 border-amber-200";
-        icon = <Clock size={12} />;
-        label = "Ag. Aprovação";
-        break;
-      case 'aguardando justificativa':
-        style = "bg-purple-100 text-purple-700 border-purple-200";
-        icon = <FileText size={12} />;
-        label = "Ag. Justificativa";
-        break;
-      case 'reprovado Enio':
-        style = "bg-red-100 text-red-700 border-red-200";
-        icon = <XCircle size={12} />;
-        label = "Reprovado Enio";
-        break;
-      default:
-        style = "bg-slate-100 text-slate-600 border-slate-200";
-        icon = <Clock size={12} />;
-    }
-
-    return (
-      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border ${style}`}>
-        {icon}
-        <span className="whitespace-nowrap">{label}</span>
-      </span>
-    );
-  };
-
-  return (
-    <div className="space-y-6">
-      
-      {/* Modal de Relatório */}
-      {showReport && (
-        <ReportModal 
-          orders={filteredOrders} 
-          onClose={onCloseReport} 
-          currentUserProfile={currentUserProfile}
-        />
-      )}
-
-      {/* Modal de Notas */}
-      {noteModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
-                <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                    <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                        <MessageSquare size={18} className="text-blue-500"/>
-                        Observações
-                    </h3>
-                    <button onClick={() => setNoteModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                        <X size={20} />
+          return (
+            <div className="fixed inset-0 z-50 bg-white sm:bg-slate-100 sm:p-4 overflow-y-auto">
+              <div className="max-w-5xl mx-auto bg-white min-h-screen sm:min-h-0 sm:rounded-xl shadow-none sm:shadow-2xl overflow-hidden flex flex-col">
+                
+                {/* Header do Relatório */}
+                <div className="bg-slate-800 text-white p-4 flex justify-between items-center print:hidden">
+                  <div>
+                    <h2 className="text-xl font-bold flex items-center gap-2">
+                      <FileText /> Relatório de Lançamentos
+                    </h2>
+                    <p className="text-slate-400 text-sm">Visualização de impressão e exportação</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={handleExportCSV}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium"
+                    >
+                      <Download size={16} /> CSV / Excel
                     </button>
+                    <button 
+                      onClick={handlePrint}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium"
+                    >
+                      <Printer size={16} /> Imprimir
+                    </button>
+                    <button 
+                      onClick={onClose}
+                      className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium"
+                    >
+                      <X size={16} /> Fechar
+                    </button>
+                  </div>
                 </div>
-                <div className="p-6">
-                    <div className="mb-4 text-xs text-slate-500">
-                        Pedido: <span className="font-medium text-slate-700">#{selectedOrderForNote?.orderNumber}</span>
+
+                {/* Área Imprimível */}
+                <div className="p-8 print:p-0 bg-white" id="printable-area">
+                  <div className="mb-6 border-b pb-4">
+                    <h1 className="text-2xl font-bold text-slate-900 mb-1">Relatório Geral de Pedidos</h1>
+                    <div className="flex justify-between text-sm text-slate-500">
+                      <span>Gerado em: {new Date().toLocaleString('pt-BR')}</span>
+                      <span>Total de Registros: {totalCount}</span>
                     </div>
-                    <textarea 
-                        className="w-full h-32 p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm resize-none"
-                        placeholder="Escreva as observações aqui..."
-                        value={currentNoteText}
-                        onChange={(e) => setCurrentNoteText(e.target.value)}
-                    />
-                    <div className="flex justify-end gap-2 mt-4">
-                        <button 
-                            onClick={() => setNoteModalOpen(false)}
-                            className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg"
-                        >
-                            Cancelar
-                        </button>
-                        <button 
-                            onClick={saveNoteFromModal}
-                            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
-                        >
-                            Salvar Nota
-                        </button>
-                    </div>
+                  </div>
+
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b-2 border-slate-800 text-slate-800 font-bold uppercase">
+                        <th className="py-2 pr-2">Data</th>
+                        <th className="py-2 pr-2">Pedido</th>
+                        <th className="py-2 pr-2">Filial</th>
+                        <th className="py-2 pr-2">Mantenedora</th>
+                        <th className="py-2 pr-2">Forn.</th>
+                        <th className="py-2 pr-2">Tipo</th>
+                        <th className="py-2 pr-2">Status</th>
+                        <th className="py-2 pr-2 text-right">Valor</th>
+                        <th className="py-2 pl-2">Resp.</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {orders.map((order, index) => (
+                        <tr key={order.id} className={`border-b border-slate-200 ${index % 2 === 0 ? 'bg-slate-50 print:bg-transparent' : ''}`}>
+                          <td className="py-2 pr-2 whitespace-nowrap">{formatDate(order.createdAt)}</td>
+                          <td className="py-2 pr-2 font-medium">#{order.orderNumber}</td>
+                          <td className="py-2 pr-2 truncate max-w-[120px]">{order.branch}</td>
+                          <td className="py-2 pr-2 truncate max-w-[100px]">{order.maintainer}</td>
+                          <td className="py-2 pr-2 truncate max-w-[100px]">{order.supplier}</td>
+                          <td className="py-2 pr-2">{order.type}</td>
+                          <td className="py-2 pr-2">
+                            <span className="capitalize">{order.status}</span>
+                            {order.completed && <span className="ml-1 font-bold text-emerald-600">(OK)</span>}
+                          </td>
+                          <td className="py-2 pr-2 text-right font-medium">{formatCurrency(order.value)}</td>
+                          <td className="py-2 pl-2">{order.userProfile}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-slate-800 font-bold text-sm bg-slate-50 print:bg-transparent">
+                        <td colSpan="7" className="py-3 text-right pr-4">TOTAL GERAL:</td>
+                        <td className="py-3 text-right text-slate-900">{formatCurrency(totalValue)}</td>
+                        <td></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+
+                  <div className="mt-8 text-center text-xs text-slate-400 print:block hidden">
+                    <p>Relatório gerado pelo Sistema de Controle de Pedidos Internos</p>
+                  </div>
                 </div>
+              </div>
             </div>
-        </div>
-      )}
+          );
+        }
 
-      {/* Cards de Resumo */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 print:hidden">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
-          <div className="text-slate-500 text-xs font-medium uppercase tracking-wider mb-1">Listagem</div>
-          <div className="text-2xl font-bold text-slate-800">{filterUser || "Geral"}</div>
-        </div>
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
-          <div className="text-slate-500 text-xs font-medium uppercase tracking-wider mb-1">Pedidos Visíveis</div>
-          <div className="text-2xl font-bold text-slate-800">{summary.count}</div>
-        </div>
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
-          <div className="text-slate-500 text-xs font-medium uppercase tracking-wider mb-1">Pendentes</div>
-          <div className="text-2xl font-bold text-amber-600">{summary.pending}</div>
-        </div>
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
-          <div className="text-slate-500 text-xs font-medium uppercase tracking-wider mb-1">Valor Total</div>
-          <div className="text-2xl font-bold text-emerald-600">{formatCurrency(summary.total)}</div>
-        </div>
-      </div>
+        // --- Componente: Dashboard e Lista ---
+        function DashboardAndList({ orders, onEdit, onDelete, onUpdateNote, onToggleComplete, currentUserProfile, showReport, onCloseReport }) {
+          const [searchTerm, setSearchTerm] = useState('');
+          const [noteModalOpen, setNoteModalOpen] = useState(false);
+          const [selectedOrderForNote, setSelectedOrderForNote] = useState(null);
+          const [currentNoteText, setCurrentNoteText] = useState('');
 
-      {/* Barra de Busca e Filtros */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3 print:hidden">
-        <div className="flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                <input 
-                    type="text" 
-                    placeholder="Buscar pedido, filial, fornecedor..." 
-                    className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
+          // Filtros
+          const [filterBranch, setFilterBranch] = useState('');
+          const [filterType, setFilterType] = useState('');
+          const [filterMaintainer, setFilterMaintainer] = useState('');
+          const [filterStatus, setFilterStatus] = useState('');
+          const [filterUser, setFilterUser] = useState('');
+          
+          useEffect(() => {
+            setFilterUser(currentUserProfile);
+          }, [currentUserProfile]);
+
+          const openNoteModal = (order) => {
+            setSelectedOrderForNote(order);
+            setCurrentNoteText(order.notes || '');
+            setNoteModalOpen(true);
+          };
+
+          const saveNoteFromModal = async () => {
+            if (selectedOrderForNote) {
+                await onUpdateNote(selectedOrderForNote.id, currentNoteText);
+                setNoteModalOpen(false);
+                setSelectedOrderForNote(null);
+            }
+          };
+
+          const filteredOrders = useMemo(() => {
+            return orders.filter(order => {
+              const term = searchTerm.toLowerCase();
+              const matchesSearch = 
+                order.orderNumber?.toLowerCase().includes(term) ||
+                order.branch?.toLowerCase().includes(term) ||
+                order.supplier?.toLowerCase().includes(term) ||
+                order.maintainer?.toLowerCase().includes(term);
+              
+              const matchesBranch = filterBranch ? order.branch === filterBranch : true;
+              const matchesStatus = filterStatus ? order.status === filterStatus : true;
+              const matchesMaintainer = filterMaintainer ? order.maintainer === filterMaintainer : true;
+              const matchesType = filterType ? order.type === filterType : true;
+              const matchesUser = filterUser ? (order.userProfile === filterUser) : true;
+              
+              return matchesSearch && matchesBranch && matchesStatus && matchesMaintainer && matchesType && matchesUser;
+            });
+          }, [orders, searchTerm, filterBranch, filterStatus, filterMaintainer, filterType, filterUser]);
+
+          const summary = useMemo(() => {
+            const listToCalc = filteredOrders;
+            const totalValue = listToCalc.reduce((acc, curr) => {
+              if (curr.status === 'reprovado Enio') return acc;
+              return acc + (parseFloat(curr.value) || 0);
+            }, 0);
+            
+            return {
+              count: listToCalc.length,
+              total: totalValue,
+              pending: listToCalc.filter(o => o.status === 'ag. aprovação' || o.status === 'aguardando justificativa').length
+            };
+          }, [filteredOrders]);
+
+          // COMBINAR AS LISTAS FIXAS COM VALORES EXISTENTES
+          const branches = useMemo(() => {
+              const existing = new Set(orders.map(o => o.branch).filter(Boolean));
+              LISTA_FILIAIS.forEach(b => existing.add(b));
+              return [...existing].sort();
+          }, [orders]);
+
+          const maintainers = useMemo(() => {
+              const existing = new Set(orders.map(o => o.maintainer).filter(Boolean));
+              LISTA_MANTENEDORAS.forEach(m => existing.add(m));
+              return [...existing].sort();
+          }, [orders]);
+
+          const formatCurrency = (val) => {
+            return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+          };
+
+          const formatDate = (dateObj) => {
+            if (!dateObj) return '-';
+            return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit' }).format(dateObj);
+          };
+
+          const StatusBadge = ({ status }) => {
+            let style = "";
+            let icon = null;
+            let label = status;
+
+            switch (status) {
+              case 'aprovado':
+                style = "bg-emerald-100 text-emerald-700 border-emerald-200";
+                icon = <CheckCircle2 size={12} />;
+                label = "Aprovado";
+                break;
+              case 'enviado':
+                style = "bg-blue-100 text-blue-700 border-blue-200";
+                icon = <Send size={12} />;
+                label = "Enviado";
+                break;
+              case 'ag. aprovação':
+                style = "bg-amber-100 text-amber-700 border-amber-200";
+                icon = <Clock size={12} />;
+                label = "Ag. Aprovação";
+                break;
+              case 'aguardando justificativa':
+                style = "bg-purple-100 text-purple-700 border-purple-200";
+                icon = <FileText size={12} />;
+                label = "Ag. Justificativa";
+                break;
+              case 'reprovado Enio':
+                style = "bg-red-100 text-red-700 border-red-200";
+                icon = <XCircle size={12} />;
+                label = "Reprovado Enio";
+                break;
+              default:
+                style = "bg-slate-100 text-slate-600 border-slate-200";
+                icon = <Clock size={12} />;
+            }
+
+            return (
+              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border ${style}`}>
+                {icon}
+                <span className="whitespace-nowrap">{label}</span>
+              </span>
+            );
+          };
+
+          return (
+            <div className="space-y-6">
+              
+              {/* Modal de Relatório */}
+              {showReport && (
+                <ReportModal 
+                  orders={filteredOrders} 
+                  onClose={onCloseReport} 
+                  currentUserProfile={currentUserProfile}
                 />
-            </div>
-            {/* Filtro de Usuário */}
-            <div className="relative min-w-[140px]">
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                    <User size={16} />
-                </div>
-                <select 
-                    className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium text-slate-700"
-                    value={filterUser}
-                    onChange={(e) => setFilterUser(e.target.value)}
-                >
-                    <option value="">Todos Usuários</option>
-                    <option value="JORDAN">Jordan</option>
-                    <option value="NELSON">Nelson</option>
-                </select>
-            </div>
-        </div>
-        
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <select 
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              value={filterMaintainer}
-              onChange={(e) => setFilterMaintainer(e.target.value)}
-            >
-              <option value="">Mantenedora</option>
-              {maintainers.map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
+              )}
 
-            <select 
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              value={filterBranch}
-              onChange={(e) => setFilterBranch(e.target.value)}
-            >
-              <option value="">Filial</option>
-              {branches.map(b => <option key={b} value={b}>{b}</option>)}
-            </select>
-
-            <select 
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              value={filterType}
-              onChange={(e) => setFilterType(e.target.value)}
-            >
-              <option value="">Tipo</option>
-              <option value="Produto">Produto</option>
-              <option value="Serviço">Serviço</option>
-            </select>
-
-            <select 
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-            >
-              <option value="">Status</option>
-              <option value="aprovado">Aprovado</option>
-              <option value="enviado">Enviado</option>
-              <option value="ag. aprovação">Ag. Aprovação</option>
-              <option value="aguardando justificativa">Ag. Justificativa</option>
-              <option value="reprovado Enio">Reprovado Enio</option>
-            </select>
-        </div>
-      </div>
-
-      {/* Lista de Pedidos */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden print:hidden">
-        {filteredOrders.length === 0 ? (
-          <div className="p-12 text-center text-slate-400 flex flex-col items-center">
-            <LayoutDashboard size={48} className="mb-4 opacity-20" />
-            <p className="text-lg font-medium text-slate-600">Nenhum pedido encontrado</p>
-            <p className="text-sm">Tente mudar o filtro de usuário ou os termos de busca.</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Status / Tipo</th>
-                  <th className="px-4 py-3 font-medium">Pedido</th>
-                  <th className="px-4 py-3 font-medium">Filial / Mantenedora</th>
-                  <th className="px-4 py-3 font-medium">Fornecedor</th>
-                  <th className="px-4 py-3 font-medium text-right">Valor</th>
-                  <th className="px-4 py-3 font-medium text-center">Resp. / Obs. / Fim</th>
-                  <th className="px-4 py-3 font-medium text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredOrders.map((order) => (
-                  <tr 
-                    key={order.id} 
-                    className={`transition-colors group ${
-                        order.completed 
-                        ? 'bg-emerald-50 hover:bg-emerald-100 border-l-4 border-l-emerald-500' 
-                        : 'hover:bg-slate-50 border-l-4 border-l-transparent'
-                    }`}
-                  >
-                    <td className="px-4 py-3">
-                      <div className="flex flex-col gap-1 items-start">
-                        <StatusBadge status={order.status || 'ag. aprovação'} />
-                        {order.type && (
-                            <span className="text-[10px] uppercase font-bold tracking-wide text-slate-400 border border-slate-200 px-1 rounded flex items-center gap-1 bg-white">
-                                {order.type === 'Produto' ? <Box size={10}/> : <Wrench size={10}/>}
-                                {order.type}
-                            </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 font-medium text-slate-800">
-                      #{order.orderNumber}
-                      <div className="text-xs text-slate-400 font-normal">
-                        {formatDate(order.createdAt)}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-col">
-                        <span className="font-medium text-slate-700">{order.branch}</span>
-                        {order.maintainer && (
-                            <span className="text-xs text-slate-500 flex items-center gap-1">
-                                <Briefcase size={10} /> {order.maintainer}
-                            </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-slate-600 max-w-[150px] truncate" title={order.supplier}>
-                        {order.supplier}
-                    </td>
-                    <td className="px-4 py-3 text-right font-medium text-slate-700">
-                      {formatCurrency(order.value)}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                            <span className="text-[10px] font-bold bg-white border border-slate-200 text-slate-500 px-1.5 py-0.5 rounded uppercase">
-                                {order.userProfile || 'N/A'}
-                            </span>
-                            {/* Botão de Observação */}
-                            <button 
-                                onClick={() => openNoteModal(order)}
-                                className={`p-1.5 rounded-full transition-colors ${
-                                    order.notes 
-                                    ? 'bg-yellow-100 text-yellow-600 hover:bg-yellow-200' 
-                                    : 'text-slate-300 hover:bg-slate-100 hover:text-slate-500'
-                                }`}
-                                title={order.notes ? "Ver observação" : "Adicionar observação"}
-                            >
-                                <MessageSquare size={16} fill={order.notes ? "currentColor" : "none"} />
-                            </button>
-                            
-                            {/* Botão de Conclusão (Flag) */}
-                            <button 
-                                onClick={() => onToggleComplete(order.id, order.completed)}
-                                className={`p-1.5 rounded-md transition-colors shadow-sm border ${
-                                    order.completed 
-                                    ? 'bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700' 
-                                    : 'bg-white text-slate-300 border-slate-200 hover:border-slate-300 hover:text-slate-400'
-                                }`}
-                                title={order.completed ? "Reabrir pedido" : "Finalizar pedido"}
-                            >
-                                {order.completed ? <CheckSquare size={18} /> : <Square size={18} />}
+              {/* Modal de Notas */}
+              {noteModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+                        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                            <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                                <MessageSquare size={18} className="text-blue-500"/>
+                                Observações
+                            </h3>
+                            <button onClick={() => setNoteModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                                <X size={20} />
                             </button>
                         </div>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex justify-end gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                        <button 
-                          onClick={() => onEdit(order)}
-                          className="p-1.5 hover:bg-slate-200 rounded text-slate-600 transition-colors"
-                          title="Editar"
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                        <button 
-                          onClick={() => onDelete(order.id)}
-                          className="p-1.5 hover:bg-red-50 rounded text-red-500 hover:text-red-600 transition-colors"
-                          title="Excluir"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// --- Componente: Formulário de Cadastro/Edição ---
-function OrderForm({ initialData, onSave, onCancel, currentUserProfile }) {
-  const [formData, setFormData] = useState({
-    maintainer: '',
-    branch: '',
-    orderNumber: '',
-    supplier: '',
-    value: '',
-    status: 'ag. aprovação',
-    type: 'Produto', // Default
-    notes: '',
-    userProfile: currentUserProfile // Inicializa com o perfil atual
-  });
-
-  useEffect(() => {
-    if (initialData) {
-      setFormData({
-        maintainer: initialData.maintainer || '',
-        branch: initialData.branch || '',
-        orderNumber: initialData.orderNumber || '',
-        supplier: initialData.supplier || '',
-        value: initialData.value || '',
-        status: initialData.status || 'ag. aprovação',
-        type: initialData.type || 'Produto',
-        notes: initialData.notes || '',
-        userProfile: initialData.userProfile || currentUserProfile
-      });
-    } else {
-        setFormData(prev => ({ ...prev, userProfile: currentUserProfile }));
-    }
-  }, [initialData, currentUserProfile]);
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!formData.orderNumber || !formData.value || !formData.branch) return;
-
-    const payload = {
-      ...formData,
-      value: parseFloat(formData.value)
-    };
-    onSave(payload);
-  };
-
-  const statusOptions = [
-    { value: 'aprovado', label: 'Aprovado', color: 'bg-emerald-500', icon: CheckCircle2 },
-    { value: 'enviado', label: 'Enviado', color: 'bg-blue-500', icon: Send },
-    { value: 'ag. aprovação', label: 'Ag. Aprovação', color: 'bg-amber-500', icon: Clock },
-    { value: 'aguardando justificativa', label: 'Ag. Justificativa', color: 'bg-purple-500', icon: FileText },
-    { value: 'reprovado Enio', label: 'Reprovado Enio', color: 'bg-red-500', icon: XCircle },
-  ];
-
-  return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-      <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-        <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-          {initialData ? 'Editar Pedido' : 'Novo Lançamento'}
-          <span className="text-xs font-normal bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full border border-blue-200">
-             Perfil: {formData.userProfile}
-          </span>
-        </h2>
-        <button onClick={onCancel} className="text-slate-400 hover:text-slate-600">
-          <X size={20} />
-        </button>
-      </div>
-
-      <form onSubmit={handleSubmit} className="p-6 space-y-6">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-             <div className="space-y-1.5">
-              <label className="text-sm font-semibold text-slate-700">1. Mantenedor</label>
-              <div className="relative">
-                <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                <input
-                    type="text"
-                    name="maintainer"
-                    value={formData.maintainer}
-                    onChange={handleChange}
-                    placeholder="Nome da mantenedora..."
-                    className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                    list="maintainers-list"
-                />
-                <datalist id="maintainers-list">
-                    {LISTA_MANTENEDORAS.map(m => (
-                      <option key={m} value={m} />
-                    ))}
-                </datalist>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-sm font-semibold text-slate-700">2. Filial *</label>
-              <div className="relative">
-                <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                <input
-                    type="text"
-                    name="branch"
-                    value={formData.branch}
-                    onChange={handleChange}
-                    placeholder="Selecione ou digite..."
-                    className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                    required
-                    list="branches-list"
-                />
-                <datalist id="branches-list">
-                    {LISTA_FILIAIS.map(b => (
-                      <option key={b} value={b} />
-                    ))}
-                </datalist>
-              </div>
-            </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            <div className="space-y-1.5">
-              <label className="text-sm font-semibold text-slate-700">3. Número do Pedido *</label>
-              <div className="relative">
-                <FileText className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                <input
-                    type="text"
-                    name="orderNumber"
-                    value={formData.orderNumber}
-                    onChange={handleChange}
-                    placeholder="Ex: 12345"
-                    className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                    required
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-sm font-semibold text-slate-700">4. Fornecedor</label>
-              <div className="relative">
-                <Truck className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                <input
-                    type="text"
-                    name="supplier"
-                    value={formData.supplier}
-                    onChange={handleChange}
-                    placeholder="Nome do fornecedor..."
-                    className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-              </div>
-            </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            <div className="space-y-1.5">
-              <label className="text-sm font-semibold text-slate-700">5. Valor (R$) *</label>
-              <div className="relative">
-                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-600" size={16} />
-                <input
-                    type="number"
-                    name="value"
-                    value={formData.value}
-                    onChange={handleChange}
-                    step="0.01"
-                    min="0"
-                    placeholder="0,00"
-                    className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none font-medium"
-                    required
-                />
-              </div>
-            </div>
-
-             <div className="space-y-1.5">
-                <label className="text-sm font-semibold text-slate-700">Tipo</label>
-                <div className="flex bg-slate-50 p-1 rounded-lg border border-slate-200">
-                    <button
-                        type="button"
-                        onClick={() => setFormData(prev => ({ ...prev, type: 'Produto' }))}
-                        className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all flex items-center justify-center gap-2 ${
-                            formData.type === 'Produto' 
-                            ? 'bg-white text-blue-600 shadow-sm' 
-                            : 'text-slate-500 hover:text-slate-700'
-                        }`}
-                    >
-                        <Box size={16}/> Produto
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setFormData(prev => ({ ...prev, type: 'Serviço' }))}
-                        className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all flex items-center justify-center gap-2 ${
-                            formData.type === 'Serviço' 
-                            ? 'bg-white text-orange-600 shadow-sm' 
-                            : 'text-slate-500 hover:text-slate-700'
-                        }`}
-                    >
-                        <Wrench size={16}/> Serviço
-                    </button>
+                        <div className="p-6">
+                            <div className="mb-4 text-xs text-slate-500">
+                                Pedido: <span className="font-medium text-slate-700">#{selectedOrderForNote?.orderNumber}</span>
+                            </div>
+                            <textarea 
+                                className="w-full h-32 p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm resize-none"
+                                placeholder="Escreva as observações aqui..."
+                                value={currentNoteText}
+                                onChange={(e) => setCurrentNoteText(e.target.value)}
+                            />
+                            <div className="flex justify-end gap-2 mt-4">
+                                <button 
+                                    onClick={() => setNoteModalOpen(false)}
+                                    className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg"
+                                >
+                                    Cancelar
+                                </button>
+                                <button 
+                                    onClick={saveNoteFromModal}
+                                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
+                                >
+                                    Salvar Nota
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
-        </div>
+              )}
 
-        <div className="space-y-3">
-            <label className="text-sm font-semibold text-slate-700">6. Status do Pedido</label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                {statusOptions.map((option) => (
-                    <label key={option.value} className="cursor-pointer relative">
+              {/* Cards de Resumo */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 print:hidden">
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                  <div className="text-slate-500 text-xs font-medium uppercase tracking-wider mb-1">Listagem</div>
+                  <div className="text-2xl font-bold text-slate-800">{filterUser || "Geral"}</div>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                  <div className="text-slate-500 text-xs font-medium uppercase tracking-wider mb-1">Pedidos Visíveis</div>
+                  <div className="text-2xl font-bold text-slate-800">{summary.count}</div>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                  <div className="text-slate-500 text-xs font-medium uppercase tracking-wider mb-1">Pendentes</div>
+                  <div className="text-2xl font-bold text-amber-600">{summary.pending}</div>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                  <div className="text-slate-500 text-xs font-medium uppercase tracking-wider mb-1">Valor Total</div>
+                  <div className="text-2xl font-bold text-emerald-600">{formatCurrency(summary.total)}</div>
+                </div>
+              </div>
+
+              {/* Barra de Busca e Filtros */}
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3 print:hidden">
+                <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                         <input 
-                            type="radio" 
-                            name="status" 
-                            value={option.value}
-                            checked={formData.status === option.value}
-                            onChange={handleChange}
-                            className="hidden"
+                            type="text" 
+                            placeholder="Buscar pedido, filial, fornecedor..." 
+                            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
                         />
-                        <div className={`
-                            flex flex-col items-center justify-center p-3 rounded-lg border transition-all h-full
-                            ${formData.status === option.value 
-                                ? `${option.color} text-white border-transparent ring-2 ring-offset-1 ring-${option.color.split('-')[1]}-500`
-                                : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
-                            }
-                        `}>
-                            <option.icon size={20} className="mb-1" />
-                            <span className="text-xs font-bold text-center leading-tight">{option.label}</span>
+                    </div>
+                    {/* Filtro de Usuário */}
+                    <div className="relative min-w-[140px]">
+                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                            <User size={16} />
                         </div>
-                    </label>
-                ))}
+                        <select 
+                            className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium text-slate-700"
+                            value={filterUser}
+                            onChange={(e) => setFilterUser(e.target.value)}
+                        >
+                            <option value="">Todos Usuários</option>
+                            <option value="JORDAN">Jordan</option>
+                            <option value="NELSON">Nelson</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <select 
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      value={filterMaintainer}
+                      onChange={(e) => setFilterMaintainer(e.target.value)}
+                    >
+                      <option value="">Mantenedora</option>
+                      {maintainers.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+
+                    <select 
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      value={filterBranch}
+                      onChange={(e) => setFilterBranch(e.target.value)}
+                    >
+                      <option value="">Filial</option>
+                      {branches.map(b => <option key={b} value={b}>{b}</option>)}
+                    </select>
+
+                    <select 
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      value={filterType}
+                      onChange={(e) => setFilterType(e.target.value)}
+                    >
+                      <option value="">Tipo</option>
+                      <option value="Produto">Produto</option>
+                      <option value="Serviço">Serviço</option>
+                    </select>
+
+                    <select 
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      value={filterStatus}
+                      onChange={(e) => setFilterStatus(e.target.value)}
+                    >
+                      <option value="">Status</option>
+                      <option value="aprovado">Aprovado</option>
+                      <option value="enviado">Enviado</option>
+                      <option value="ag. aprovação">Ag. Aprovação</option>
+                      <option value="aguardando justificativa">Ag. Justificativa</option>
+                      <option value="reprovado Enio">Reprovado Enio</option>
+                    </select>
+                </div>
+              </div>
+
+              {/* Lista de Pedidos */}
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden print:hidden">
+                {filteredOrders.length === 0 ? (
+                  <div className="p-12 text-center text-slate-400 flex flex-col items-center">
+                    <LayoutDashboard size={48} className="mb-4 opacity-20" />
+                    <p className="text-lg font-medium text-slate-600">Nenhum pedido encontrado</p>
+                    <p className="text-sm">Tente mudar o filtro de usuário ou os termos de busca.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                        <tr>
+                          <th className="px-4 py-3 font-medium">Status / Tipo</th>
+                          <th className="px-4 py-3 font-medium">Pedido</th>
+                          <th className="px-4 py-3 font-medium">Filial / Mantenedora</th>
+                          <th className="px-4 py-3 font-medium">Fornecedor</th>
+                          <th className="px-4 py-3 font-medium text-right">Valor</th>
+                          <th className="px-4 py-3 font-medium text-center">Resp. / Obs. / Fim</th>
+                          <th className="px-4 py-3 font-medium text-right">Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredOrders.map((order) => (
+                          <tr 
+                            key={order.id} 
+                            className={`transition-colors group ${
+                                order.completed 
+                                ? 'bg-emerald-50 hover:bg-emerald-100 border-l-4 border-l-emerald-500' 
+                                : 'hover:bg-slate-50 border-l-4 border-l-transparent'
+                            }`}
+                          >
+                            <td className="px-4 py-3">
+                              <div className="flex flex-col gap-1 items-start">
+                                <StatusBadge status={order.status || 'ag. aprovação'} />
+                                {order.type && (
+                                    <span className="text-[10px] uppercase font-bold tracking-wide text-slate-400 border border-slate-200 px-1 rounded flex items-center gap-1 bg-white">
+                                        {order.type === 'Produto' ? <Box size={10}/> : <Wrench size={10}/>}
+                                        {order.type}
+                                    </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 font-medium text-slate-800">
+                              #{order.orderNumber}
+                              <div className="text-xs text-slate-400 font-normal">
+                                {formatDate(order.createdAt)}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex flex-col">
+                                <span className="font-medium text-slate-700">{order.branch}</span>
+                                {order.maintainer && (
+                                    <span className="text-xs text-slate-500 flex items-center gap-1">
+                                        <Briefcase size={10} /> {order.maintainer}
+                                    </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-slate-600 max-w-[150px] truncate" title={order.supplier}>
+                                {order.supplier}
+                            </td>
+                            <td className="px-4 py-3 text-right font-medium text-slate-700">
+                              {formatCurrency(order.value)}
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                                <div className="flex items-center justify-center gap-2">
+                                    <span className="text-[10px] font-bold bg-white border border-slate-200 text-slate-500 px-1.5 py-0.5 rounded uppercase">
+                                        {order.userProfile || 'N/A'}
+                                    </span>
+                                    {/* Botão de Observação */}
+                                    <button 
+                                        onClick={() => openNoteModal(order)}
+                                        className={`p-1.5 rounded-full transition-colors ${
+                                            order.notes 
+                                            ? 'bg-yellow-100 text-yellow-600 hover:bg-yellow-200' 
+                                            : 'text-slate-300 hover:bg-slate-100 hover:text-slate-500'
+                                        }`}
+                                        title={order.notes ? "Ver observação" : "Adicionar observação"}
+                                    >
+                                        <MessageSquare size={16} fill={order.notes ? "currentColor" : "none"} />
+                                    </button>
+                                    
+                                    {/* Botão de Conclusão (Flag) */}
+                                    <button 
+                                        onClick={() => onToggleComplete(order.id, order.completed)}
+                                        className={`p-1.5 rounded-md transition-colors shadow-sm border ${
+                                            order.completed 
+                                            ? 'bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700' 
+                                            : 'bg-white text-slate-300 border-slate-200 hover:border-slate-300 hover:text-slate-400'
+                                        }`}
+                                        title={order.completed ? "Reabrir pedido" : "Finalizar pedido"}
+                                    >
+                                        {order.completed ? <CheckSquare size={18} /> : <Square size={18} />}
+                                    </button>
+                                </div>
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <div className="flex justify-end gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                                <button 
+                                  onClick={() => onEdit(order)}
+                                  className="p-1.5 hover:bg-slate-200 rounded text-slate-600 transition-colors"
+                                  title="Editar"
+                                >
+                                  <Edit2 size={16} />
+                                </button>
+                                <button 
+                                  onClick={() => onDelete(order.id)}
+                                  className="p-1.5 hover:bg-red-50 rounded text-red-500 hover:text-red-600 transition-colors"
+                                  title="Excluir"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
-        </div>
+          );
+        }
 
-        <div className="space-y-1.5 pt-2 border-t border-slate-100">
-          <label className="text-sm font-semibold text-slate-700">Observações (Opcional)</label>
-          <textarea
-            name="notes"
-            value={formData.notes}
-            onChange={handleChange}
-            rows="2"
-            placeholder="Detalhes adicionais..."
-            className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-slate-400 outline-none resize-none text-sm"
-          />
-        </div>
+        // --- Componente: Formulário de Cadastro/Edição ---
+        function OrderForm({ initialData, onSave, onCancel, currentUserProfile }) {
+          const [formData, setFormData] = useState({
+            maintainer: '',
+            branch: '',
+            orderNumber: '',
+            supplier: '',
+            value: '',
+            status: 'ag. aprovação',
+            type: 'Produto', // Default
+            notes: '',
+            userProfile: currentUserProfile // Inicializa com o perfil atual
+          });
 
-        <div className="pt-4 flex flex-col-reverse sm:flex-row justify-end gap-3">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-6 py-2.5 rounded-lg border border-slate-200 text-slate-600 font-medium hover:bg-slate-50 transition-colors w-full sm:w-auto"
-          >
-            Cancelar
-          </button>
-          <button
-            type="submit"
-            className="px-6 py-2.5 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 w-full sm:w-auto"
-          >
-            <Save size={18} />
-            Salvar Lançamento
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
+          useEffect(() => {
+            if (initialData) {
+              setFormData({
+                maintainer: initialData.maintainer || '',
+                branch: initialData.branch || '',
+                orderNumber: initialData.orderNumber || '',
+                supplier: initialData.supplier || '',
+                value: initialData.value || '',
+                status: initialData.status || 'ag. aprovação',
+                type: initialData.type || 'Produto',
+                notes: initialData.notes || '',
+                userProfile: initialData.userProfile || currentUserProfile
+              });
+            } else {
+                setFormData(prev => ({ ...prev, userProfile: currentUserProfile }));
+            }
+          }, [initialData, currentUserProfile]);
+
+          const handleChange = (e) => {
+            const { name, value } = e.target;
+            setFormData(prev => ({ ...prev, [name]: value }));
+          };
+
+          const handleSubmit = (e) => {
+            e.preventDefault();
+            if (!formData.orderNumber || !formData.value || !formData.branch) return;
+
+            const payload = {
+              ...formData,
+              value: parseFloat(formData.value)
+            };
+            onSave(payload);
+          };
+
+          const statusOptions = [
+            { value: 'aprovado', label: 'Aprovado', color: 'bg-emerald-500', icon: CheckCircle2 },
+            { value: 'enviado', label: 'Enviado', color: 'bg-blue-500', icon: Send },
+            { value: 'ag. aprovação', label: 'Ag. Aprovação', color: 'bg-amber-500', icon: Clock },
+            { value: 'aguardando justificativa', label: 'Ag. Justificativa', color: 'bg-purple-500', icon: FileText },
+            { value: 'reprovado Enio', label: 'Reprovado Enio', color: 'bg-red-500', icon: XCircle },
+          ];
+
+          return (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  {initialData ? 'Editar Pedido' : 'Novo Lançamento'}
+                  <span className="text-xs font-normal bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full border border-blue-200">
+                     Perfil: {formData.userProfile}
+                  </span>
+                </h2>
+                <button onClick={onCancel} className="text-slate-400 hover:text-slate-600">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <form onSubmit={handleSubmit} className="p-6 space-y-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                     <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-slate-700">1. Mantenedor</label>
+                      <div className="relative">
+                        <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                        <input
+                            type="text"
+                            name="maintainer"
+                            value={formData.maintainer}
+                            onChange={handleChange}
+                            placeholder="Nome da mantenedora..."
+                            className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                            list="maintainers-list"
+                        />
+                        <datalist id="maintainers-list">
+                            {LISTA_MANTENEDORAS.map(m => (
+                              <option key={m} value={m} />
+                            ))}
+                        </datalist>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-slate-700">2. Filial *</label>
+                      <div className="relative">
+                        <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                        <input
+                            type="text"
+                            name="branch"
+                            value={formData.branch}
+                            onChange={handleChange}
+                            placeholder="Selecione ou digite..."
+                            className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                            required
+                            list="branches-list"
+                        />
+                        <datalist id="branches-list">
+                            {LISTA_FILIAIS.map(b => (
+                              <option key={b} value={b} />
+                            ))}
+                        </datalist>
+                      </div>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-slate-700">3. Número do Pedido *</label>
+                      <div className="relative">
+                        <FileText className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                        <input
+                            type="text"
+                            name="orderNumber"
+                            value={formData.orderNumber}
+                            onChange={handleChange}
+                            placeholder="Ex: 12345"
+                            className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                            required
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-slate-700">4. Fornecedor</label>
+                      <div className="relative">
+                        <Truck className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                        <input
+                            type="text"
+                            name="supplier"
+                            value={formData.supplier}
+                            onChange={handleChange}
+                            placeholder="Nome do fornecedor..."
+                            className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-slate-700">5. Valor (R$) *</label>
+                      <div className="relative">
+                        <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-600" size={16} />
+                        <input
+                            type="number"
+                            name="value"
+                            value={formData.value}
+                            onChange={handleChange}
+                            step="0.01"
+                            min="0"
+                            placeholder="0,00"
+                            className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none font-medium"
+                            required
+                        />
+                      </div>
+                    </div>
+
+                     <div className="space-y-1.5">
+                        <label className="text-sm font-semibold text-slate-700">Tipo</label>
+                        <div className="flex bg-slate-50 p-1 rounded-lg border border-slate-200">
+                            <button
+                                type="button"
+                                onClick={() => setFormData(prev => ({ ...prev, type: 'Produto' }))}
+                                className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all flex items-center justify-center gap-2 ${
+                                    formData.type === 'Produto' 
+                                    ? 'bg-white text-blue-600 shadow-sm' 
+                                    : 'text-slate-500 hover:text-slate-700'
+                                }`}
+                            >
+                                <Box size={16}/> Produto
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setFormData(prev => ({ ...prev, type: 'Serviço' }))}
+                                className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all flex items-center justify-center gap-2 ${
+                                    formData.type === 'Serviço' 
+                                    ? 'bg-white text-orange-600 shadow-sm' 
+                                    : 'text-slate-500 hover:text-slate-700'
+                                }`}
+                            >
+                                <Wrench size={16}/> Serviço
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="space-y-3">
+                    <label className="text-sm font-semibold text-slate-700">6. Status do Pedido</label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                        {statusOptions.map((option) => (
+                            <label key={option.value} className="cursor-pointer relative">
+                                <input 
+                                    type="radio" 
+                                    name="status" 
+                                    value={option.value}
+                                    checked={formData.status === option.value}
+                                    onChange={handleChange}
+                                    className="hidden"
+                                />
+                                <div className={`
+                                    flex flex-col items-center justify-center p-3 rounded-lg border transition-all h-full
+                                    ${formData.status === option.value 
+                                        ? `${option.color} text-white border-transparent ring-2 ring-offset-1 ring-${option.color.split('-')[1]}-500`
+                                        : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                                    }
+                                `}>
+                                    <option.icon size={20} className="mb-1" />
+                                    <span className="text-xs font-bold text-center leading-tight">{option.label}</span>
+                                </div>
+                            </label>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                  <label className="text-sm font-semibold text-slate-700">Observações (Opcional)</label>
+                  <textarea
+                    name="notes"
+                    value={formData.notes}
+                    onChange={handleChange}
+                    rows="2"
+                    placeholder="Detalhes adicionais..."
+                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-slate-400 outline-none resize-none text-sm"
+                  />
+                </div>
+
+                <div className="pt-4 flex flex-col-reverse sm:flex-row justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={onCancel}
+                    className="px-6 py-2.5 rounded-lg border border-slate-200 text-slate-600 font-medium hover:bg-slate-50 transition-colors w-full sm:w-auto"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2.5 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 w-full sm:w-auto"
+                  >
+                    <Save size={18} />
+                    Salvar Lançamento
+                  </button>
+                </div>
+              </form>
+            </div>
+          );
+        }
+
+        // --- Montagem do React na Página ---
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
