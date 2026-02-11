@@ -9,8 +9,6 @@ import {
   FileText, 
   Building2, 
   DollarSign, 
-  Calendar, 
-  ArrowLeft,
   LayoutDashboard,
   Filter,
   CheckCircle2,
@@ -18,7 +16,6 @@ import {
   XCircle,
   Package, 
   Tag,     
-  Layers,
   User,
   Truck, 
   Briefcase, 
@@ -28,9 +25,9 @@ import {
   MessageSquare, 
   CheckSquare,   
   Square,
-  Printer,       // Icone Impressora
-  Download,      // Icone Download
-  FileSpreadsheet // Icone Planilha
+  Printer,       
+  Download,      
+  FileSpreadsheet 
 } from 'lucide-react';
 
 // Firebase Imports
@@ -50,7 +47,6 @@ import {
   doc, 
   onSnapshot, 
   serverTimestamp, 
-  orderBy, 
   query 
 } from 'firebase/firestore';
 
@@ -380,7 +376,7 @@ function ReportModal({ orders, onClose, currentUserProfile }) {
     <div className="fixed inset-0 z-50 bg-white sm:bg-slate-100 sm:p-4 overflow-y-auto">
       <div className="max-w-5xl mx-auto bg-white min-h-screen sm:min-h-0 sm:rounded-xl shadow-none sm:shadow-2xl overflow-hidden flex flex-col">
         
-        {/* Header do Relatório (Não sai na impressão padrão se configurado, mas aqui queremos ver) */}
+        {/* Header do Relatório */}
         <div className="bg-slate-800 text-white p-4 flex justify-between items-center print:hidden">
           <div>
             <h2 className="text-xl font-bold flex items-center gap-2">
@@ -467,7 +463,6 @@ function ReportModal({ orders, onClose, currentUserProfile }) {
         </div>
       </div>
       
-      {/* Estilos específicos para impressão */}
       <style>{`
         @media print {
           body * {
@@ -496,8 +491,6 @@ function ReportModal({ orders, onClose, currentUserProfile }) {
 // --- Componente: Dashboard e Lista ---
 function DashboardAndList({ orders, onEdit, onDelete, onUpdateNote, onToggleComplete, currentUserProfile, showReport, onCloseReport }) {
   const [searchTerm, setSearchTerm] = useState('');
-  
-  // Estado para o Modal de Notas
   const [noteModalOpen, setNoteModalOpen] = useState(false);
   const [selectedOrderForNote, setSelectedOrderForNote] = useState(null);
   const [currentNoteText, setCurrentNoteText] = useState('');
@@ -527,7 +520,6 @@ function DashboardAndList({ orders, onEdit, onDelete, onUpdateNote, onToggleComp
     }
   };
 
-  // Filtragem Complexa
   const filteredOrders = useMemo(() => {
     return orders.filter(order => {
       const term = searchTerm.toLowerCase();
@@ -630,7 +622,7 @@ function DashboardAndList({ orders, onEdit, onDelete, onUpdateNote, onToggleComp
   return (
     <div className="space-y-6">
       
-      {/* Modal de Relatório (Exibido condicionalmente) */}
+      {/* Modal de Relatório */}
       {showReport && (
         <ReportModal 
           orders={filteredOrders} 
@@ -714,7 +706,7 @@ function DashboardAndList({ orders, onEdit, onDelete, onUpdateNote, onToggleComp
                     onChange={(e) => setSearchTerm(e.target.value)}
                 />
             </div>
-            {/* Filtro de Usuário (Quem lançou) */}
+            {/* Filtro de Usuário */}
             <div className="relative min-w-[140px]">
                 <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
                     <User size={16} />
@@ -929,7 +921,6 @@ function OrderForm({ initialData, onSave, onCancel, currentUserProfile }) {
         userProfile: initialData.userProfile || currentUserProfile
       });
     } else {
-        // Garantir que se o usuário mudar o perfil lá fora e clicar em Novo, pegue o atual
         setFormData(prev => ({ ...prev, userProfile: currentUserProfile }));
     }
   }, [initialData, currentUserProfile]);
@@ -973,10 +964,6 @@ function OrderForm({ initialData, onSave, onCancel, currentUserProfile }) {
       </div>
 
       <form onSubmit={handleSubmit} className="p-6 space-y-6">
-        
-        {/* SEQUÊNCIA SOLICITADA: Mantenedor - Filial - Pedido - Fornecedor - Valor - Status - Tipo */}
-
-        {/* Linha 1: Mantenedor e Filial */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
              <div className="space-y-1.5">
               <label className="text-sm font-semibold text-slate-700">1. Mantenedor</label>
@@ -1022,7 +1009,6 @@ function OrderForm({ initialData, onSave, onCancel, currentUserProfile }) {
             </div>
         </div>
 
-        {/* Linha 2: Pedido e Fornecedor */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             <div className="space-y-1.5">
               <label className="text-sm font-semibold text-slate-700">3. Número do Pedido *</label>
@@ -1056,7 +1042,6 @@ function OrderForm({ initialData, onSave, onCancel, currentUserProfile }) {
             </div>
         </div>
 
-        {/* Linha 3: Valor e Tipo (Produto/Serviço) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             <div className="space-y-1.5">
               <label className="text-sm font-semibold text-slate-700">5. Valor (R$) *</label>
@@ -1076,7 +1061,6 @@ function OrderForm({ initialData, onSave, onCancel, currentUserProfile }) {
               </div>
             </div>
 
-            {/* TIPO: Produto ou Serviço */}
              <div className="space-y-1.5">
                 <label className="text-sm font-semibold text-slate-700">Tipo</label>
                 <div className="flex bg-slate-50 p-1 rounded-lg border border-slate-200">
@@ -1106,7 +1090,6 @@ function OrderForm({ initialData, onSave, onCancel, currentUserProfile }) {
             </div>
         </div>
 
-        {/* Linha 4: Status com as Novas Opções */}
         <div className="space-y-3">
             <label className="text-sm font-semibold text-slate-700">6. Status do Pedido</label>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
@@ -1135,7 +1118,6 @@ function OrderForm({ initialData, onSave, onCancel, currentUserProfile }) {
             </div>
         </div>
 
-        {/* Observações */}
         <div className="space-y-1.5 pt-2 border-t border-slate-100">
           <label className="text-sm font-semibold text-slate-700">Observações (Opcional)</label>
           <textarea
