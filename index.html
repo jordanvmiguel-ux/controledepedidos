@@ -38,25 +38,30 @@
     <!-- Ponto de montagem do React -->
     <div id="root"></div>
 
-    <!-- CONFIGURAÇÃO DO FIREBASE -->
+    <!-- ================================================================= -->
+    <!--  ÁREA DE CONFIGURAÇÃO DO BANCO DE DADOS (FIREBASE)                -->
+    <!--  Preencha os campos abaixo com os dados do seu projeto Firebase   -->
+    <!-- ================================================================= -->
     <script>
-        // Lógica para detecção de ambiente:
-        // 1. Se estiver rodando no ambiente de preview (Canvas), usa a config injetada (__firebase_config).
-        // 2. Se estiver rodando localmente (arquivo salvo), usa o objeto abaixo que você deve preencher.
+        // Se a configuração já vier do ambiente (Preview), usamos ela.
+        // Caso contrário, usamos o bloco abaixo que você deve preencher.
         
         if (typeof window.__firebase_config === 'undefined' || !window.__firebase_config) {
-            // --- PREENCHA AQUI SE ESTIVER RODANDO FORA DO PREVIEW ---
+            
+            // --- INÍCIO: COLE SUAS CREDENCIAIS DO FIREBASE AQUI ---
             window.__firebase_config = JSON.stringify({
-                apiKey: "", // Coloque sua API Key aqui
-                authDomain: "",
-                projectId: "",
-                storageBucket: "",
-                messagingSenderId: "",
-                appId: ""
+                apiKey: "AIzaSyCzY0DtCzx4-SKkguAkwCoiZGDCMtUKR78",
+                authDomain: "controlerequisicao-16db7.firebaseapp.com",
+                projectId: "controlerequisicao-16db7",
+                storageBucket: "controlerequisicao-16db7.firebasestorage.app",
+                messagingSenderId: "33006341640",
+                appId: "1:33006341640:web:db021ddf0bdebcafdc4bbd"
             });
+            // --- FIM: ÁREA DE CONFIGURAÇÃO ---
+
         }
         
-        // Identificador do App e Token opcional
+        // Identificador do App
         if (typeof window.__app_id === 'undefined') {
             window.__app_id = "controle-pedidos-v1";
         }
@@ -124,9 +129,9 @@
             const rawConfig = window.__firebase_config;
             const firebaseConfig = typeof rawConfig === 'string' ? JSON.parse(rawConfig) : rawConfig;
             
-            // Verificação básica se a config é válida
-            if (!firebaseConfig || !firebaseConfig.apiKey || firebaseConfig.apiKey === "SUA_API_KEY_AQUI") {
-                throw new Error("Configuração do Firebase ausente ou inválida.");
+            // Verificação se a chave foi preenchida
+            if (!firebaseConfig || !firebaseConfig.apiKey || firebaseConfig.apiKey === "") {
+                throw new Error("As chaves do Firebase não foram preenchidas no código.");
             }
 
             app = initializeApp(firebaseConfig);
@@ -192,7 +197,7 @@
 
             const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
               setUser(currentUser);
-              if(currentUser) setLoading(false); // Stop loading when user is found
+              if(currentUser) setLoading(false);
             });
             return () => unsubscribe();
           }, []);
@@ -311,18 +316,31 @@
           if (firebaseError || authError) {
              return (
                 <div className="min-h-screen bg-red-50 flex items-center justify-center p-4">
-                    <div className="bg-white p-6 rounded-xl shadow-lg max-w-md text-center border border-red-100">
-                        <XCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-                        <h2 className="text-xl font-bold text-slate-800 mb-2">Erro de Configuração</h2>
-                        <p className="text-slate-600 mb-4 text-sm">
-                            {firebaseError ? "Configuração do Firebase inválida." : "Erro na autenticação com Firebase."}
-                        </p>
-                        <div className="bg-slate-100 p-3 rounded text-xs text-left font-mono text-slate-600 overflow-x-auto">
-                            {firebaseError || authError}
+                    <div className="bg-white p-6 rounded-xl shadow-lg max-w-lg text-center border border-red-100">
+                        <XCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+                        <h2 className="text-xl font-bold text-slate-800 mb-2">Configuração Necessária</h2>
+                        
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-left mb-6">
+                            <p className="text-amber-800 text-sm font-semibold mb-2">Por que estou vendo isso?</p>
+                            <p className="text-amber-700 text-xs leading-relaxed">
+                                Este sistema é seguro e privado. Ele precisa se conectar ao seu próprio banco de dados (Google Firebase) para salvar os pedidos. 
+                                Como o banco de dados ainda não foi configurado no código, o sistema não pode iniciar.
+                            </p>
                         </div>
-                        <p className="mt-4 text-xs text-slate-500">
-                            Se estiver rodando este arquivo localmente, abra o código e preencha o bloco <code>window.__firebase_config</code> com suas credenciais do Firebase.
-                        </p>
+
+                        <div className="text-left space-y-4">
+                            <h3 className="text-sm font-bold text-slate-700">Como corrigir agora:</h3>
+                            <ol className="list-decimal pl-5 text-sm text-slate-600 space-y-2">
+                                <li>Abra este arquivo <code>index.html</code> em um editor de texto (Bloco de Notas, VS Code).</li>
+                                <li>Procure pelo bloco <code>window.__firebase_config</code> (perto da linha 45).</li>
+                                <li>Preencha os campos <code>apiKey</code>, <code>projectId</code>, etc. com os dados do seu projeto Firebase.</li>
+                                <li>Salve o arquivo e recarregue esta página.</li>
+                            </ol>
+                        </div>
+                        
+                        <div className="mt-6 pt-4 border-t border-slate-100 text-xs text-slate-400">
+                            Erro técnico: {firebaseError || authError}
+                        </div>
                     </div>
                 </div>
              );
@@ -435,7 +453,6 @@
 
         // --- Componente: Modal de Relatório ---
         function ReportModal({ orders, onClose, currentUserProfile }) {
-          // Dados para exportação e visualização
           const totalValue = orders.reduce((acc, curr) => acc + (parseFloat(curr.value) || 0), 0);
           const totalCount = orders.length;
 
@@ -467,9 +484,9 @@
                 order.supplier,
                 order.type,
                 order.status,
-                order.value?.toString().replace('.', ','), // Formato BR
+                order.value?.toString().replace('.', ','), 
                 order.userProfile,
-                (order.notes || '').replace(/;/g, ','), // Evitar quebra do CSV
+                (order.notes || '').replace(/;/g, ','), 
                 order.completed ? 'SIM' : 'NAO'
               ];
               csvContent += row.join(";") + "\r\n";
@@ -979,264 +996,6 @@
                   </div>
                 )}
               </div>
-            </div>
-          );
-        }
-
-        // --- Componente: Formulário de Cadastro/Edição ---
-        function OrderForm({ initialData, onSave, onCancel, currentUserProfile }) {
-          const [formData, setFormData] = useState({
-            maintainer: '',
-            branch: '',
-            orderNumber: '',
-            supplier: '',
-            value: '',
-            status: 'ag. aprovação',
-            type: 'Produto', // Default
-            notes: '',
-            userProfile: currentUserProfile // Inicializa com o perfil atual
-          });
-
-          useEffect(() => {
-            if (initialData) {
-              setFormData({
-                maintainer: initialData.maintainer || '',
-                branch: initialData.branch || '',
-                orderNumber: initialData.orderNumber || '',
-                supplier: initialData.supplier || '',
-                value: initialData.value || '',
-                status: initialData.status || 'ag. aprovação',
-                type: initialData.type || 'Produto',
-                notes: initialData.notes || '',
-                userProfile: initialData.userProfile || currentUserProfile
-              });
-            } else {
-                setFormData(prev => ({ ...prev, userProfile: currentUserProfile }));
-            }
-          }, [initialData, currentUserProfile]);
-
-          const handleChange = (e) => {
-            const { name, value } = e.target;
-            setFormData(prev => ({ ...prev, [name]: value }));
-          };
-
-          const handleSubmit = (e) => {
-            e.preventDefault();
-            if (!formData.orderNumber || !formData.value || !formData.branch) return;
-
-            const payload = {
-              ...formData,
-              value: parseFloat(formData.value)
-            };
-            onSave(payload);
-          };
-
-          const statusOptions = [
-            { value: 'aprovado', label: 'Aprovado', color: 'bg-emerald-500', icon: CheckCircle2 },
-            { value: 'enviado', label: 'Enviado', color: 'bg-blue-500', icon: Send },
-            { value: 'ag. aprovação', label: 'Ag. Aprovação', color: 'bg-amber-500', icon: Clock },
-            { value: 'aguardando justificativa', label: 'Ag. Justificativa', color: 'bg-purple-500', icon: FileText },
-            { value: 'reprovado Enio', label: 'Reprovado Enio', color: 'bg-red-500', icon: XCircle },
-          ];
-
-          return (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                  {initialData ? 'Editar Pedido' : 'Novo Lançamento'}
-                  <span className="text-xs font-normal bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full border border-blue-200">
-                     Perfil: {formData.userProfile}
-                  </span>
-                </h2>
-                <button onClick={onCancel} className="text-slate-400 hover:text-slate-600">
-                  <X size={20} />
-                </button>
-              </div>
-
-              <form onSubmit={handleSubmit} className="p-6 space-y-6">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                     <div className="space-y-1.5">
-                      <label className="text-sm font-semibold text-slate-700">1. Mantenedor</label>
-                      <div className="relative">
-                        <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                        <input
-                            type="text"
-                            name="maintainer"
-                            value={formData.maintainer}
-                            onChange={handleChange}
-                            placeholder="Nome da mantenedora..."
-                            className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                            list="maintainers-list"
-                        />
-                        <datalist id="maintainers-list">
-                            {LISTA_MANTENEDORAS.map(m => (
-                              <option key={m} value={m} />
-                            ))}
-                        </datalist>
-                      </div>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-semibold text-slate-700">2. Filial *</label>
-                      <div className="relative">
-                        <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                        <input
-                            type="text"
-                            name="branch"
-                            value={formData.branch}
-                            onChange={handleChange}
-                            placeholder="Selecione ou digite..."
-                            className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                            required
-                            list="branches-list"
-                        />
-                        <datalist id="branches-list">
-                            {LISTA_FILIAIS.map(b => (
-                              <option key={b} value={b} />
-                            ))}
-                        </datalist>
-                      </div>
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-semibold text-slate-700">3. Número do Pedido *</label>
-                      <div className="relative">
-                        <FileText className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                        <input
-                            type="text"
-                            name="orderNumber"
-                            value={formData.orderNumber}
-                            onChange={handleChange}
-                            placeholder="Ex: 12345"
-                            className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                            required
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-semibold text-slate-700">4. Fornecedor</label>
-                      <div className="relative">
-                        <Truck className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                        <input
-                            type="text"
-                            name="supplier"
-                            value={formData.supplier}
-                            onChange={handleChange}
-                            placeholder="Nome do fornecedor..."
-                            className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                        />
-                      </div>
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-semibold text-slate-700">5. Valor (R$) *</label>
-                      <div className="relative">
-                        <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-600" size={16} />
-                        <input
-                            type="number"
-                            name="value"
-                            value={formData.value}
-                            onChange={handleChange}
-                            step="0.01"
-                            min="0"
-                            placeholder="0,00"
-                            className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none font-medium"
-                            required
-                        />
-                      </div>
-                    </div>
-
-                     <div className="space-y-1.5">
-                        <label className="text-sm font-semibold text-slate-700">Tipo</label>
-                        <div className="flex bg-slate-50 p-1 rounded-lg border border-slate-200">
-                            <button
-                                type="button"
-                                onClick={() => setFormData(prev => ({ ...prev, type: 'Produto' }))}
-                                className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all flex items-center justify-center gap-2 ${
-                                    formData.type === 'Produto' 
-                                    ? 'bg-white text-blue-600 shadow-sm' 
-                                    : 'text-slate-500 hover:text-slate-700'
-                                }`}
-                            >
-                                <Box size={16}/> Produto
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setFormData(prev => ({ ...prev, type: 'Serviço' }))}
-                                className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all flex items-center justify-center gap-2 ${
-                                    formData.type === 'Serviço' 
-                                    ? 'bg-white text-orange-600 shadow-sm' 
-                                    : 'text-slate-500 hover:text-slate-700'
-                                }`}
-                            >
-                                <Wrench size={16}/> Serviço
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="space-y-3">
-                    <label className="text-sm font-semibold text-slate-700">6. Status do Pedido</label>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                        {statusOptions.map((option) => (
-                            <label key={option.value} className="cursor-pointer relative">
-                                <input 
-                                    type="radio" 
-                                    name="status" 
-                                    value={option.value}
-                                    checked={formData.status === option.value}
-                                    onChange={handleChange}
-                                    className="hidden"
-                                />
-                                <div className={`
-                                    flex flex-col items-center justify-center p-3 rounded-lg border transition-all h-full
-                                    ${formData.status === option.value 
-                                        ? `${option.color} text-white border-transparent ring-2 ring-offset-1 ring-${option.color.split('-')[1]}-500`
-                                        : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
-                                    }
-                                `}>
-                                    <option.icon size={20} className="mb-1" />
-                                    <span className="text-xs font-bold text-center leading-tight">{option.label}</span>
-                                </div>
-                            </label>
-                        ))}
-                    </div>
-                </div>
-
-                <div className="space-y-1.5 pt-2 border-t border-slate-100">
-                  <label className="text-sm font-semibold text-slate-700">Observações (Opcional)</label>
-                  <textarea
-                    name="notes"
-                    value={formData.notes}
-                    onChange={handleChange}
-                    rows="2"
-                    placeholder="Detalhes adicionais..."
-                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-slate-400 outline-none resize-none text-sm"
-                  />
-                </div>
-
-                <div className="pt-4 flex flex-col-reverse sm:flex-row justify-end gap-3">
-                  <button
-                    type="button"
-                    onClick={onCancel}
-                    className="px-6 py-2.5 rounded-lg border border-slate-200 text-slate-600 font-medium hover:bg-slate-50 transition-colors w-full sm:w-auto"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-6 py-2.5 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 w-full sm:w-auto"
-                  >
-                    <Save size={18} />
-                    Salvar Lançamento
-                  </button>
-                </div>
-              </form>
             </div>
           );
         }
