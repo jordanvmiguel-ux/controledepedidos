@@ -143,12 +143,20 @@
           const [passwordModalOpen, setPasswordModalOpen] = useState(false);
           const [pendingProfile, setPendingProfile] = useState(null);
           const [passwordInput, setPasswordInput] = useState('');
-          
-          // --- CONTROLE DE LAYOUT ---
-          const [layoutMode, setLayoutMode] = useState('gaming'); // 'gaming' ou 'traditional'
+          const [layoutMode, setLayoutMode] = useState('gaming');
 
           useEffect(() => {
-            signInAnonymously(auth).catch(console.error);
+            const initAuth = async () => {
+              try {
+                await signInAnonymously(auth);
+              } catch (error) {
+                console.error("Erro na autenticação:", error);
+                alert("ERRO CRÍTICO: Não foi possível autenticar. Verifique se o login anónimo está activo no Firebase Console.");
+                setLoading(false);
+              }
+            };
+            initAuth();
+
             const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
               setUser(currentUser);
               if(currentUser) setLoading(false);
@@ -158,6 +166,7 @@
 
           useEffect(() => {
             if (!user || !db) return;
+            // Caminho da coleção seguindo as regras do ambiente
             const q = query(collection(db, 'artifacts', appId, 'users', user.uid, 'orders'));
             const unsubscribe = onSnapshot(q, (snapshot) => {
                 const loadedOrders = snapshot.docs.map(doc => ({
@@ -167,7 +176,9 @@
                 }));
                 loadedOrders.sort((a, b) => b.createdAt - a.createdAt);
                 setOrders(loadedOrders);
-              }, () => {}
+              }, (error) => { 
+                  console.error("Erro no listener do Firestore:", error);
+              }
             );
             return () => unsubscribe();
           }, [user]);
@@ -186,20 +197,66 @@
           };
 
           const handleSave = async (orderData) => {
+            if (!user) {
+              alert("Aguarde a autenticação do sistema...");
+              return;
+            }
+
             try {
               const collectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'orders');
               const dataToSave = { 
                 ...orderData, 
-                userProfile: orderData.id ? (orderData.userProfile || 'JORDAN') : currentUserProfile 
+                userProfile: orderData.id ? (orderData.userProfile || 'JORDAN') : currentUserProfile,
+                updatedAt: serverTimestamp()
               };
+
               if (editingOrder) {
-                await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'orders', editingOrder.id), { ...dataToSave, updatedAt: serverTimestamp() });
+                const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'orders', editingOrder.id);
+                await updateDoc(docRef, dataToSave);
               } else {
-                await addDoc(collectionRef, { ...dataToSave, createdAt: serverTimestamp(), completed: false });
+                await addDoc(collectionRef, { 
+                    ...dataToSave, 
+                    createdAt: serverTimestamp(), 
+                    completed: false 
+                });
               }
               setView('list');
               setEditingOrder(null);
-            } catch (error) { alert("Erro ao salvar no banco de dados."); }
+            } catch (error) { 
+              console.error("Erro ao gravar:", error);
+              alert("FALHA NA GRAVAÇÃO: " + error.message + "\n\nVerifique se as REGRAS do Firestore no console permitem escrita.");
+            }
+          };
+
+          const handleDelete = async (id) => {
+            if (!window.confirm("CONFIRMAR EXCLUSÃO DE DADOS?")) return;
+            try {
+              await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'orders', id));
+            } catch (error) {
+              alert("Erro ao excluir: " + error.message);
+            }
+          };
+
+          const handleToggleComplete = async (id, currentVal) => {
+            try {
+              await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'orders', id), { 
+                completed: !currentVal,
+                updatedAt: serverTimestamp()
+              });
+            } catch (error) {
+              alert("Erro ao atualizar status: " + error.message);
+            }
+          };
+
+          const handleUpdateNote = async (id, noteText) => {
+            try {
+              await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'orders', id), { 
+                notes: noteText,
+                updatedAt: serverTimestamp()
+              });
+            } catch (error) {
+              alert("Erro ao salvar nota: " + error.message);
+            }
           };
 
           if (loading) return (
@@ -207,7 +264,7 @@
                 <div className="w-64 h-2 bg-slate-800 rounded-full overflow-hidden mb-4 neon-border">
                     <div className="h-full bg-cyan-400 animate-[pulse_1s_infinite] shadow-[0_0_10px_#22d3ee]"></div>
                 </div>
-                <p className="text-cyan-400 font-bold tracking-widest animate-pulse uppercase">Carregando Sistema...</p>
+                <p className="text-cyan-400 font-bold tracking-widest animate-pulse uppercase">Sincronizando com Banco de Dados...</p>
             </div>
           );
 
@@ -219,11 +276,11 @@
                   <div className={`${layoutMode === 'gaming' ? 'game-card p-1' : 'bg-white rounded-xl shadow-2xl overflow-hidden'} w-full max-w-sm`}>
                     <div className={`${layoutMode === 'gaming' ? 'bg-slate-900 border-b border-cyan-500/30 text-cyan-400' : 'bg-slate-100 border-b text-slate-800'} p-4 flex items-center justify-center gap-2`}>
                       <ShieldCheck size={24} />
-                      <h3 className="font-bold text-xl uppercase tracking-tighter">Identifique-se: {pendingProfile}</h3>
+                      <h3 className="font-bold text-xl uppercase tracking-tighter">Login Operador: {pendingProfile}</h3>
                     </div>
                     <form onSubmit={handlePasswordSubmit} className="p-6">
                       <input 
-                        type="password" autoFocus placeholder="SENHA DE ACESSO"
+                        type="password" autoFocus placeholder="••••"
                         className={`w-full px-4 py-3 rounded-lg mb-6 text-center text-xl tracking-[0.5em] outline-none ${
                             layoutMode === 'gaming' 
                             ? 'bg-slate-950 border border-slate-700 text-white focus:ring-2 focus:ring-cyan-500' 
@@ -235,14 +292,14 @@
                         <button type="button" onClick={() => setPasswordModalOpen(false)} className="flex-1 py-3 text-slate-500 font-bold uppercase hover:text-slate-400 transition-colors">Cancelar</button>
                         <button type="submit" className={`flex-1 py-3 font-black uppercase rounded-lg shadow-lg ${
                             layoutMode === 'gaming' ? 'bg-cyan-600 text-white btn-game' : 'bg-blue-600 text-white hover:bg-blue-700'
-                        }`}>Acessar</button>
+                        }`}>Aceder</button>
                       </div>
                     </form>
                   </div>
                 </div>
               )}
 
-              {/* HUD DO CABEÇALHO */}
+              {/* CABEÇALHO */}
               <header className={`sticky top-0 z-10 px-4 py-2 backdrop-blur-md print:hidden border-b transition-all ${
                 layoutMode === 'gaming' 
                 ? 'bg-slate-900/80 border-cyan-500/20' 
@@ -260,13 +317,12 @@
                             Centro de Comando
                         </h1>
                         <p className={`text-[10px] font-bold tracking-[0.2em] uppercase ${layoutMode === 'gaming' ? 'text-cyan-400/70' : 'text-slate-400'}`}>
-                            {layoutMode === 'gaming' ? 'SISTEMA v2.0 // CORE PRINCIPAL' : 'Gestão de Manutenções Internas'}
+                            SISTEMA v2.1 // DATABASE: ONLINE
                         </p>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-4">
-                    {/* SELETOR DE LAYOUT */}
                     <button 
                         onClick={() => setLayoutMode(prev => prev === 'gaming' ? 'traditional' : 'gaming')}
                         className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all uppercase ${
@@ -274,7 +330,6 @@
                             ? 'bg-slate-800 border-slate-700 text-cyan-400 hover:bg-slate-700' 
                             : 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200'
                         }`}
-                        title="Trocar Interface"
                     >
                         {layoutMode === 'gaming' ? <><Laptop size={14}/> Visual Tradicional</> : <><Monitor size={14}/> Visual Gamming</>}
                     </button>
@@ -290,19 +345,19 @@
                                 : 'text-slate-500 hover:text-slate-400'
                             }`}
                         >
-                            {p === currentUserProfile && layoutMode === 'gaming' ? <span className="flex items-center gap-1"><Zap size={12}/> {p}</span> : p}
+                            {p}
                         </button>
                       ))}
                     </div>
                     {currentUserProfile && (
                       <div className={`flex items-center gap-2 border-l pl-4 ${layoutMode === 'gaming' ? 'border-slate-700' : 'border-slate-200'}`}>
                         <button onClick={() => setShowReport(true)} className={`p-2 rounded-lg border transition-colors ${
-                            layoutMode === 'gaming' ? 'bg-slate-800 border-slate-700 text-cyan-400 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                        }`} title="Relatório"><BarChart3 size={20} /></button>
-                        <button onClick={() => { setEditingOrder(null); setView('form'); }} className={`px-4 py-2 rounded-lg font-black uppercase text-xs flex items-center gap-2 shadow-lg transition-all ${
-                            layoutMode === 'gaming' ? 'bg-emerald-500 text-slate-950 btn-game shadow-emerald-500/20' : 'bg-blue-600 text-white hover:bg-blue-700'
-                        }`}><Plus size={18}/> Nova Missão</button>
-                        <button onClick={() => setCurrentUserProfile(null)} className="p-2 text-slate-400 hover:text-red-500 transition-colors"><LogOut size={20} /></button>
+                            layoutMode === 'gaming' ? 'bg-slate-800 border-slate-700 text-cyan-400' : 'bg-white border-slate-200'
+                        }`}><BarChart3 size={20} /></button>
+                        <button onClick={() => { setEditingOrder(null); setView('form'); }} className={`px-4 py-2 rounded-lg font-black uppercase text-xs flex items-center gap-2 shadow-lg ${
+                            layoutMode === 'gaming' ? 'bg-emerald-500 text-slate-950 btn-game' : 'bg-blue-600 text-white'
+                        }`}><Plus size={18}/> Novo</button>
+                        <button onClick={() => setCurrentUserProfile(null)} className="p-2 text-slate-400 hover:text-red-500"><LogOut size={20} /></button>
                       </div>
                     )}
                   </div>
@@ -326,9 +381,9 @@
                     <DashboardAndList 
                       orders={orders} currentUserProfile={currentUserProfile} layoutMode={layoutMode}
                       onEdit={o => {setEditingOrder(o); setView('form');}}
-                      onDelete={id => deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'orders', id))}
-                      onToggleComplete={(id, val) => updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'orders', id), { completed: !val })}
-                      onUpdateNote={(id, n) => updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'orders', id), { notes: n })}
+                      onDelete={handleDelete}
+                      onToggleComplete={handleToggleComplete}
+                      onUpdateNote={handleUpdateNote}
                       showReport={showReport} onCloseReport={() => setShowReport(false)}
                     />
                   ) : (
@@ -340,7 +395,7 @@
           );
         }
 
-        // --- Componente: Dashboard e Log ---
+        // --- Dashboard e Lista ---
         function DashboardAndList({ orders, onEdit, onDelete, onUpdateNote, onToggleComplete, currentUserProfile, showReport, onCloseReport, layoutMode }) {
           const [searchTerm, setSearchTerm] = useState('');
           const [filterBranch, setFilterBranch] = useState('');
@@ -390,8 +445,8 @@
                         <MessageSquare size={20} className="text-blue-500"/> Observações
                     </h3>
                     <textarea className={`w-full h-32 p-3 border rounded-lg outline-none resize-none ${
-                        layoutMode === 'gaming' ? 'bg-slate-950 border-slate-700 text-white focus:ring-2 focus:ring-cyan-500' : 'bg-slate-50 border-slate-200 text-slate-800 focus:ring-2 focus:ring-blue-500'
-                    }`} value={noteModal.text} onChange={e => setNoteModal({...noteModal, text: e.target.value})} placeholder="Digite aqui..." />
+                        layoutMode === 'gaming' ? 'bg-slate-950 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'
+                    }`} value={noteModal.text} onChange={e => setNoteModal({...noteModal, text: e.target.value})} placeholder="Escreva os detalhes..." />
                     <div className="flex justify-end gap-2 mt-4">
                       <button onClick={() => setNoteModal({open: false, order: null, text: ''})} className="px-4 py-2 text-slate-500 font-medium">Cancelar</button>
                       <button onClick={() => { onUpdateNote(noteModal.order.id, noteModal.text); setNoteModal({open: false, order: null, text: ''}); }} className={`px-6 py-2 rounded-lg font-bold text-white ${layoutMode === 'gaming' ? 'bg-cyan-600' : 'bg-blue-600'}`}>Salvar</button>
@@ -400,78 +455,65 @@
                 </div>
               )}
 
-              {/* GADGETS ESTATS */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className={`${cardClass} p-4 relative overflow-hidden group`}>
-                  <div className={`absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-20 transition-opacity ${layoutMode === 'gaming' ? 'text-cyan-400' : 'text-slate-400'}`}><Target size={48} /></div>
-                  <p className={`text-[10px] font-black uppercase tracking-[0.2em] ${layoutMode === 'gaming' ? 'text-cyan-400' : 'text-slate-500'}`}>Missões Totais ({currentUserProfile})</p>
+                <div className={`${cardClass} p-4 relative overflow-hidden`}>
+                  <p className={`text-[10px] font-black uppercase tracking-[0.2em] ${layoutMode === 'gaming' ? 'text-cyan-400' : 'text-slate-500'}`}>Registos ({currentUserProfile})</p>
                   <p className={`text-4xl font-black ${layoutMode === 'gaming' ? 'text-white neon-text-blue' : 'text-slate-800'}`}>{stats.count}</p>
                 </div>
-                <div className={`${cardClass} p-4 col-span-1 sm:col-span-2 relative overflow-hidden group ${layoutMode === 'gaming' ? 'border-emerald-500/30' : ''}`}>
-                  <div className={`absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-20 transition-opacity ${layoutMode === 'gaming' ? 'text-emerald-400' : 'text-slate-400'}`}><Zap size={48} /></div>
-                  <p className={`text-[10px] font-black uppercase tracking-[0.2em] ${layoutMode === 'gaming' ? 'text-emerald-400' : 'text-slate-500'}`}>Recursos Alocados</p>
+                <div className={`${cardClass} p-4 col-span-1 sm:col-span-2 relative overflow-hidden`}>
+                  <p className={`text-[10px] font-black uppercase tracking-[0.2em] ${layoutMode === 'gaming' ? 'text-emerald-400' : 'text-slate-500'}`}>Créditos Alocados</p>
                   <p className={`text-4xl font-black ${layoutMode === 'gaming' ? 'text-emerald-400 shadow-emerald-500/20' : 'text-emerald-600'}`}>
                     {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(stats.total)}
                   </p>
                 </div>
               </div>
 
-              {/* HUD FILTROS */}
-              <div className={`${cardClass} p-4 space-y-4 ${layoutMode === 'gaming' ? 'border-slate-700/50 bg-slate-900/40' : ''}`}>
+              <div className={`${cardClass} p-4 space-y-4`}>
                 <div className="relative">
                     <Search className={`absolute left-3 top-1/2 -translate-y-1/2 ${layoutMode === 'gaming' ? 'text-cyan-400/50' : 'text-slate-400'}`} size={20} />
                     <input 
-                        type="text" placeholder={layoutMode === 'gaming' ? "ESCANEANDO LANÇAMENTOS..." : "Pesquisar por número, filial..."} 
+                        type="text" placeholder="ESCANEANDO DADOS..." 
                         className={`w-full pl-10 pr-4 py-3 rounded-lg text-sm outline-none transition-all ${
                             layoutMode === 'gaming' 
-                            ? 'bg-slate-950/50 border border-cyan-500/20 text-white font-bold tracking-wider uppercase focus:border-cyan-400' 
-                            : 'bg-white border border-slate-200 text-slate-800 focus:ring-2 focus:ring-blue-100 focus:border-blue-400'
+                            ? 'bg-slate-950/50 border border-cyan-500/20 text-white font-bold tracking-wider' 
+                            : 'bg-white border border-slate-200 text-slate-800'
                         }`} 
                         value={searchTerm} onChange={e => setSearchTerm(e.target.value)} 
                     />
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <select className={`p-2 rounded text-xs font-bold uppercase outline-none ${
-                    layoutMode === 'gaming' ? 'bg-slate-950 border border-slate-700 text-cyan-400 focus:border-cyan-400' : 'bg-white border border-slate-200 text-slate-600'
+                  <select className={`p-2 rounded text-xs font-bold uppercase ${
+                    layoutMode === 'gaming' ? 'bg-slate-950 border border-slate-700 text-cyan-400' : 'bg-white border border-slate-200 text-slate-600'
                   }`} value={filterBranch} onChange={e => setFilterBranch(e.target.value)}><option value="">FILIAL: TODAS</option>{LISTA_FILIAIS.map(f => <option key={f} value={f}>{f.toUpperCase()}</option>)}</select>
-                  <select className={`p-2 rounded text-xs font-bold uppercase outline-none ${
-                    layoutMode === 'gaming' ? 'bg-slate-950 border border-slate-700 text-cyan-400 focus:border-cyan-400' : 'bg-white border border-slate-200 text-slate-600'
+                  <select className={`p-2 rounded text-xs font-bold uppercase ${
+                    layoutMode === 'gaming' ? 'bg-slate-950 border border-slate-700 text-cyan-400' : 'bg-white border border-slate-200 text-slate-600'
                   }`} value={filterMaintainer} onChange={e => setFilterMaintainer(e.target.value)}><option value="">MANTENEDORA</option>{LISTA_MANTENEDORAS.map(m => <option key={m} value={m}>{m}</option>)}</select>
-                  <select className={`p-2 rounded text-xs font-bold uppercase outline-none ${
-                    layoutMode === 'gaming' ? 'bg-slate-950 border border-slate-700 text-cyan-400 focus:border-cyan-400' : 'bg-white border border-slate-200 text-slate-600'
+                  <select className={`p-2 rounded text-xs font-bold uppercase ${
+                    layoutMode === 'gaming' ? 'bg-slate-950 border border-slate-700 text-cyan-400' : 'bg-white border border-slate-200 text-slate-600'
                   }`} value={filterSupplier} onChange={e => setFilterSupplier(e.target.value)}><option value="">FORNECEDOR</option>{listaFornecedores.map(s => <option key={s} value={s}>{s.toUpperCase()}</option>)}</select>
-                  <select className={`p-2 rounded text-xs font-bold uppercase outline-none ${
-                    layoutMode === 'gaming' ? 'bg-slate-950 border border-slate-700 text-cyan-400 focus:border-cyan-400' : 'bg-white border border-slate-200 text-slate-600'
-                  }`} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="">STATUS: GERAL</option><option value="aprovado">STATUS: APROVADO</option><option value="enviado">STATUS: ENVIADO</option><option value="ag. aprovação">STATUS: AG. APROVAÇÃO</option><option value="aguardando justificativa">STATUS: AG. JUSTIF.</option><option value="reprovado Enio">STATUS: REPROVADO</option></select>
+                  <select className={`p-2 rounded text-xs font-bold uppercase ${
+                    layoutMode === 'gaming' ? 'bg-slate-950 border border-slate-700 text-cyan-400' : 'bg-white border border-slate-200 text-slate-600'
+                  }`} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="">STATUS: GERAL</option><option value="aprovado">APROVADO</option><option value="enviado">ENVIADO</option><option value="ag. aprovação">AG. APROVAÇÃO</option><option value="aguardando justificativa">AG. JUSTIFICATIVA</option><option value="reprovado Enio">REPROVADO</option></select>
                 </div>
               </div>
 
-              {/* LOG TABELA */}
               <div className={`${cardClass} overflow-hidden`}>
-                <div className={`p-3 flex items-center justify-between border-b ${layoutMode === 'gaming' ? 'bg-slate-800/50 border-slate-700 text-white' : 'bg-slate-50 border-slate-100 text-slate-700'}`}>
-                    <h3 className="text-xs font-black tracking-[0.3em] flex items-center gap-2 uppercase">
-                        <Zap size={14} className={layoutMode === 'gaming' ? "text-yellow-400" : "text-blue-500"}/> 
-                        {layoutMode === 'gaming' ? 'Log de Missões Ativas' : 'Lançamentos Recentes'}
-                    </h3>
-                </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
+                  <table className="w-full text-left text-sm min-w-[700px]">
                     <thead className={`font-black uppercase text-[10px] tracking-widest border-b ${
                         layoutMode === 'gaming' ? 'bg-slate-900/80 text-cyan-400 border-slate-800' : 'bg-white text-slate-500 border-slate-100'
                     }`}>
                       <tr>
                         <th className="px-6 py-4">Status / Tipo</th>
-                        <th className="px-6 py-4">Data / Identidade</th>
+                        <th className="px-6 py-4">Pedido / Filial</th>
                         <th className="px-6 py-4">Fornecedor</th>
                         <th className="px-6 py-4 text-right">Créditos (R$)</th>
                         <th className="px-6 py-4 text-center">Ações</th>
                       </tr>
                     </thead>
-                    <tbody className={`divide-y ${layoutMode === 'gaming' ? 'divide-slate-800/50 text-slate-300' : 'divide-slate-100 text-slate-600'}`}>
+                    <tbody className={`divide-y ${layoutMode === 'gaming' ? 'divide-slate-800/50' : 'divide-slate-100'}`}>
                       {filteredOrders.length === 0 ? (
-                        <tr>
-                            <td colSpan="5" className="px-6 py-10 text-center font-bold uppercase tracking-widest text-slate-500">Nenhuma missão encontrada</td>
-                        </tr>
+                        <tr><td colSpan="5" className="px-6 py-10 text-center font-bold text-slate-500">Sem missões activas</td></tr>
                       ) : (
                         filteredOrders.map(o => (
                           <tr key={o.id} className={`transition-all duration-300 ${
@@ -480,41 +522,31 @@
                             : (layoutMode === 'gaming' ? 'hover:bg-slate-800/30' : 'hover:bg-slate-50')
                           }`}>
                             <td className="px-6 py-4">
-                              <div className="flex flex-col gap-2 items-start">
-                                <span className={`text-[10px] font-black px-3 py-1 rounded-sm uppercase tracking-tighter border ${
-                                    o.status === 'aprovado' 
-                                    ? 'bg-emerald-500/20 text-emerald-500 border-emerald-500/50' 
-                                    : o.status === 'reprovado Enio' ? 'bg-red-500/20 text-red-500 border-red-500/50' : 'bg-amber-500/20 text-amber-500 border-amber-500/50'
+                              <div className="flex flex-col gap-1 items-start">
+                                <span className={`text-[10px] font-black px-2 py-0.5 rounded border uppercase ${
+                                    o.status === 'aprovado' ? 'text-emerald-500 border-emerald-500/50' : o.status === 'reprovado Enio' ? 'text-red-500 border-red-500/50' : 'text-amber-500 border-amber-500/50'
                                 }`}>{o.status}</span>
-                                <span className="text-[10px] font-bold flex items-center gap-1 uppercase tracking-wider text-slate-500">
-                                    {o.type === 'Produto' ? <Box size={10}/> : <Wrench size={10}/>} {o.type}
-                                </span>
+                                <span className="text-[10px] opacity-50 uppercase font-bold">{o.type}</span>
                               </div>
                             </td>
                             <td className="px-6 py-4">
-                              <p className={`font-black text-base leading-none ${layoutMode === 'gaming' ? 'text-white' : 'text-slate-800'}`}>#{o.orderNumber}</p>
-                              <p className={`text-[11px] font-bold uppercase mt-1 ${layoutMode === 'gaming' ? 'text-cyan-400' : 'text-blue-600'}`}>{o.branch}</p>
-                              <p className="text-[9px] text-slate-500 font-medium">{new Intl.DateTimeFormat('pt-BR').format(o.createdAt)}</p>
+                              <p className="font-black text-base leading-none">#{o.orderNumber}</p>
+                              <p className="text-[11px] font-bold uppercase mt-1 text-blue-500">{o.branch}</p>
                             </td>
                             <td className="px-6 py-4">
-                                <p className={`text-[11px] font-black uppercase tracking-tight truncate max-w-[150px] ${layoutMode === 'gaming' ? 'text-blue-400' : 'text-slate-700'}`}>{o.supplier || 'SISTEMA'}</p>
+                                <p className="text-[11px] font-black uppercase truncate max-w-[150px]">{o.supplier || '---'}</p>
                             </td>
-                            <td className="px-6 py-4 text-right">
-                              <span className={`font-black text-lg ${layoutMode === 'gaming' ? 'text-white' : 'text-slate-900'}`}>{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(o.value)}</span>
+                            <td className="px-6 py-4 text-right font-black">
+                              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(o.value)}
                             </td>
                             <td className="px-6 py-4">
-                              <div className="flex items-center justify-center gap-3">
-                                <button onClick={() => onToggleComplete(o.id, o.completed)} className={`p-2 rounded border transition-all ${
-                                    o.completed 
-                                    ? (layoutMode === 'gaming' ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-[0_0_10px_#10b981]' : 'bg-emerald-100 text-emerald-600 border-emerald-200') 
-                                    : (layoutMode === 'gaming' ? 'bg-slate-900 text-slate-600 border-slate-700 hover:border-cyan-500' : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50')
-                                }`}>{o.completed ? <CheckSquare size={20}/> : <Square size={20}/>}</button>
-                                <button onClick={() => onEdit(o)} className={`p-2 border rounded transition-all ${
-                                    layoutMode === 'gaming' ? 'bg-slate-900 border-slate-700 text-blue-400 hover:border-blue-400' : 'bg-white border-slate-200 text-blue-600 hover:bg-blue-50'
-                                }`}><Edit2 size={16}/></button>
-                                <button onClick={() => window.confirm("ABORTAR E DELETAR REGISTRO?") && onDelete(o.id)} className={`p-2 border rounded transition-all ${
-                                    layoutMode === 'gaming' ? 'bg-slate-900 border-slate-700 text-red-500 hover:border-red-500' : 'bg-white border-slate-200 text-red-500 hover:bg-red-50'
-                                }`}><Trash2 size={16}/></button>
+                              <div className="flex items-center justify-center gap-2">
+                                <button onClick={() => onToggleComplete(o.id, o.completed)} className={`p-2 rounded border ${
+                                    o.completed ? 'bg-emerald-500 text-white' : 'text-slate-400'
+                                }`}><CheckSquare size={18}/></button>
+                                <button onClick={() => setNoteModal({open: true, order: o, text: o.notes || ''})} className={`p-2 border rounded ${o.notes ? 'text-blue-500' : 'text-slate-400'}`}><MessageSquare size={18}/></button>
+                                <button onClick={() => onEdit(o)} className="p-2 border rounded text-blue-400"><Edit2 size={16}/></button>
+                                <button onClick={() => onDelete(o.id)} className="p-2 border rounded text-red-500"><Trash2 size={16}/></button>
                               </div>
                             </td>
                           </tr>
@@ -528,7 +560,7 @@
           );
         }
 
-        // --- Componente: Formulário ---
+        // --- Formulário ---
         function OrderForm({ initialData, onSave, onCancel, currentUserProfile, layoutMode }) {
           const [formData, setFormData] = useState({
             maintainer: '', branch: '', orderNumber: '', supplier: '', 
@@ -537,133 +569,108 @@
 
           useEffect(() => { if(initialData) setFormData({...initialData}); }, [initialData]);
 
-          const cardClass = layoutMode === 'gaming' ? 'game-card border-cyan-500/30' : 'bg-white rounded-2xl shadow-2xl border border-slate-100';
           const inputClass = layoutMode === 'gaming' 
             ? 'bg-slate-950 border-slate-700 text-white focus:border-cyan-400' 
             : 'bg-slate-50 border-slate-200 text-slate-900 focus:bg-white focus:border-blue-400';
 
           return (
-            <div className={`${cardClass} max-w-2xl mx-auto overflow-hidden animate-in zoom-in duration-300`}>
-              <div className={`p-5 border-b flex justify-between items-center ${layoutMode === 'gaming' ? 'bg-slate-900 border-cyan-500/20' : 'bg-slate-50 border-slate-100'}`}>
-                <div>
-                    <h2 className={`text-2xl font-black uppercase tracking-tighter ${layoutMode === 'gaming' ? 'text-white neon-text-blue' : 'text-slate-800'}`}>{initialData ? 'Editar Missão' : 'Novo Lançamento'}</h2>
-                    <p className={`text-[10px] font-black uppercase tracking-[0.3em] ${layoutMode === 'gaming' ? 'text-cyan-400' : 'text-slate-500'}`}>Operador Ativo: {currentUserProfile}</p>
-                </div>
-                <button onClick={onCancel} className="p-2 rounded-full text-slate-400 hover:text-red-500 transition-colors"><X/></button>
+            <div className={`max-w-2xl mx-auto overflow-hidden animate-in zoom-in duration-300 ${layoutMode === 'gaming' ? 'game-card' : 'trad-card'}`}>
+              <div className="p-5 border-b flex justify-between items-center">
+                <h2 className="text-xl font-black uppercase">Ficha de Registo</h2>
+                <button onClick={onCancel} className="p-2 text-slate-400"><X/></button>
               </div>
               <form onSubmit={e => { e.preventDefault(); onSave(formData); }} className="p-8 space-y-6">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <label className={`text-xs font-black uppercase tracking-widest ${layoutMode === 'gaming' ? 'text-cyan-400' : 'text-slate-500'}`}>01. Mantenedora</label>
-                    <input list="m-list" className={`w-full p-3 border rounded font-bold outline-none transition-all uppercase ${inputClass}`} value={formData.maintainer} onChange={e => setFormData({...formData, maintainer: e.target.value})} placeholder="Selecione..." /><datalist id="m-list">{LISTA_MANTENEDORAS.map(m => <option key={m} value={m}/>)}</datalist>
+                  <div className="space-y-1">
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-500">Mantenedora</label>
+                    <input list="m-list" className={`w-full p-3 border rounded font-bold uppercase ${inputClass}`} value={formData.maintainer} onChange={e => setFormData({...formData, maintainer: e.target.value})} /><datalist id="m-list">{LISTA_MANTENEDORAS.map(m => <option key={m} value={m}/>)}</datalist>
                   </div>
-                  <div className="space-y-2">
-                    <label className={`text-xs font-black uppercase tracking-widest ${layoutMode === 'gaming' ? 'text-cyan-400' : 'text-slate-500'}`}>02. Filial / Base</label>
-                    <input list="f-list" className={`w-full p-3 border rounded font-bold outline-none transition-all uppercase ${inputClass}`} value={formData.branch} onChange={e => setFormData({...formData, branch: e.target.value})} placeholder="Localização..." /><datalist id="f-list">{LISTA_FILIAIS.map(f => <option key={f} value={f}/>)}</datalist>
+                  <div className="space-y-1">
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-500">Filial / Base</label>
+                    <input list="f-list" className={`w-full p-3 border rounded font-bold uppercase ${inputClass}`} value={formData.branch} onChange={e => setFormData({...formData, branch: e.target.value})} /><datalist id="f-list">{LISTA_FILIAIS.map(f => <option key={f} value={f}/>)}</datalist>
                   </div>
-                  <div className="space-y-2">
-                    <label className={`text-xs font-black uppercase tracking-widest ${layoutMode === 'gaming' ? 'text-cyan-400' : 'text-slate-500'}`}>03. Identificador ID</label>
-                    <input className={`w-full p-3 border rounded font-bold outline-none transition-all ${inputClass}`} value={formData.orderNumber} onChange={e => setFormData({...formData, orderNumber: e.target.value})} required placeholder="Número do pedido..." />
+                  <div className="space-y-1">
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-500">Número do Pedido</label>
+                    <input className={`w-full p-3 border rounded font-bold ${inputClass}`} value={formData.orderNumber} onChange={e => setFormData({...formData, orderNumber: e.target.value})} required />
                   </div>
-                  <div className="space-y-2">
-                    <label className={`text-xs font-black uppercase tracking-widest ${layoutMode === 'gaming' ? 'text-cyan-400' : 'text-slate-500'}`}>04. Fornecedor</label>
-                    <input className={`w-full p-3 border rounded font-bold outline-none transition-all uppercase ${inputClass}`} value={formData.supplier} onChange={e => setFormData({...formData, supplier: e.target.value})} placeholder="Nome da empresa..." />
+                  <div className="space-y-1">
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-500">Fornecedor</label>
+                    <input className={`w-full p-3 border rounded font-bold uppercase ${inputClass}`} value={formData.supplier} onChange={e => setFormData({...formData, supplier: e.target.value})} />
                   </div>
-                  <div className="space-y-2">
-                    <label className={`text-xs font-black uppercase tracking-widest ${layoutMode === 'gaming' ? 'text-cyan-400' : 'text-slate-500'}`}>05. Créditos (R$)</label>
-                    <input type="number" step="0.01" className={`w-full p-3 border rounded font-black text-xl outline-none transition-all ${
-                        layoutMode === 'gaming' ? 'bg-slate-950 border-slate-700 text-emerald-400 focus:border-emerald-400' : 'bg-slate-50 border-slate-200 text-emerald-600'
-                    }`} value={formData.value} onChange={e => setFormData({...formData, value: e.target.value})} required placeholder="0,00" />
+                  <div className="space-y-1">
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-500">Valor (R$)</label>
+                    <input type="number" step="0.01" className={`w-full p-3 border rounded font-black text-xl ${inputClass}`} value={formData.value} onChange={e => setFormData({...formData, value: e.target.value})} required />
                   </div>
-                  <div className="space-y-2">
-                    <label className={`text-xs font-black uppercase tracking-widest ${layoutMode === 'gaming' ? 'text-cyan-400' : 'text-slate-500'}`}>06. Categoria</label>
-                    <div className={`flex gap-2 p-1 rounded border ${layoutMode === 'gaming' ? 'bg-slate-950 border-slate-800' : 'bg-slate-100 border-slate-200'}`}>
-                        <button type="button" onClick={() => setFormData({...formData, type: 'Produto'})} className={`flex-1 py-2 rounded text-xs font-black uppercase transition-all ${
-                            formData.type === 'Produto' 
-                            ? (layoutMode === 'gaming' ? 'bg-cyan-500 text-slate-950 shadow-lg' : 'bg-white text-blue-600 shadow-sm border border-slate-100') 
-                            : 'text-slate-500'
-                        }`}>Produto</button>
-                        <button type="button" onClick={() => setFormData({...formData, type: 'Serviço'})} className={`flex-1 py-2 rounded text-xs font-black uppercase transition-all ${
-                            formData.type === 'Serviço' 
-                            ? (layoutMode === 'gaming' ? 'bg-orange-500 text-slate-950 shadow-lg' : 'bg-white text-orange-600 shadow-sm border border-slate-100') 
-                            : 'text-slate-500'
-                        }`}>Serviço</button>
+                  <div className="space-y-1">
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-500">Categoria</label>
+                    <div className="flex gap-2 p-1 bg-black/20 rounded">
+                        <button type="button" onClick={() => setFormData({...formData, type: 'Produto'})} className={`flex-1 py-2 rounded text-xs font-black transition-all ${formData.type === 'Produto' ? 'bg-blue-600 text-white' : 'text-slate-500'}`}>Produto</button>
+                        <button type="button" onClick={() => setFormData({...formData, type: 'Serviço'})} className={`flex-1 py-2 rounded text-xs font-black transition-all ${formData.type === 'Serviço' ? 'bg-orange-600 text-white' : 'text-slate-500'}`}>Serviço</button>
                     </div>
                   </div>
                 </div>
-                <div className="space-y-3">
-                    <label className={`text-xs font-black uppercase tracking-widest ${layoutMode === 'gaming' ? 'text-cyan-400' : 'text-slate-500'}`}>07. Status Operacional</label>
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                <div className="space-y-1 text-center">
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-500">Estado da Missão</label>
+                    <div className="flex flex-wrap justify-center gap-2 mt-2">
                         {['aprovado', 'enviado', 'ag. aprovação', 'aguardando justificativa', 'reprovado Enio'].map(s => (
-                            <button key={s} type="button" onClick={() => setFormData({...formData, status: s})} className={`py-2 rounded border text-[9px] font-black uppercase transition-all ${
-                                formData.status === s 
-                                ? (layoutMode === 'gaming' ? 'bg-white text-slate-900 border-white shadow-[0_0_10px_white]' : 'bg-slate-800 text-white border-slate-900') 
-                                : (layoutMode === 'gaming' ? 'bg-slate-900 text-slate-500 border-slate-800' : 'bg-white text-slate-400 border-slate-200')
+                            <button key={s} type="button" onClick={() => setFormData({...formData, status: s})} className={`px-3 py-2 rounded border text-[9px] font-black uppercase transition-all ${
+                                formData.status === s ? 'bg-slate-800 text-white' : 'text-slate-400'
                             }`}>{s}</button>
                         ))}
                     </div>
                 </div>
-                <div className="space-y-2">
-                    <label className={`text-xs font-black uppercase tracking-widest ${layoutMode === 'gaming' ? 'text-cyan-400' : 'text-slate-500'}`}>08. Log de Observações</label>
-                    <textarea className={`w-full p-3 border rounded font-medium outline-none resize-none ${inputClass}`} rows="2" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} placeholder="Inserir dados extras..." />
+                <div className="space-y-1">
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-500">Notas de Comando</label>
+                    <textarea className={`w-full p-3 border rounded outline-none resize-none ${inputClass}`} rows="2" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} />
                 </div>
-                <div className={`flex gap-4 pt-6 border-t ${layoutMode === 'gaming' ? 'border-slate-800' : 'border-slate-100'}`}>
-                    <button type="button" onClick={onCancel} className="flex-1 py-4 text-slate-500 font-black uppercase tracking-widest hover:text-red-500 transition-colors">Cancelar</button>
-                    <button type="submit" className={`flex-[2] py-4 rounded-lg font-black uppercase tracking-widest shadow-xl flex items-center justify-center gap-2 ${
-                        layoutMode === 'gaming' ? 'bg-cyan-600 text-white btn-game' : 'bg-blue-600 text-white hover:bg-blue-700'
-                    }`}><Save size={20}/> Gravar Registro</button>
+                <div className="flex gap-4 pt-6">
+                    <button type="button" onClick={onCancel} className="flex-1 py-4 font-black uppercase tracking-widest text-slate-400 hover:text-red-500">Cancelar</button>
+                    <button type="submit" className="flex-[2] py-4 bg-blue-600 text-white rounded-lg font-black uppercase tracking-widest shadow-xl flex items-center justify-center gap-2"><Save size={20}/> Gravar Dados</button>
                 </div>
               </form>
             </div>
           );
         }
 
-        // --- Componente: Modal de Relatório ---
+        // --- Relatório ---
         function ReportModal({ orders, onClose, layoutMode }) {
           const total = orders.reduce((acc, curr) => acc + (curr.status === 'reprovado Enio' ? 0 : parseFloat(curr.value || 0)), 0);
           return (
-            <div className={`fixed inset-0 z-[100] overflow-y-auto animate-in fade-in slide-in-from-bottom-10 duration-500 ${layoutMode === 'gaming' ? 'bg-slate-950' : 'bg-slate-50'}`}>
+            <div className={`fixed inset-0 z-[100] overflow-y-auto ${layoutMode === 'gaming' ? 'bg-slate-950 text-white' : 'bg-white text-slate-900'}`}>
               <div className="p-8 max-w-5xl mx-auto">
-                <div className={`flex justify-between items-end mb-12 print:hidden border-b pb-8 ${layoutMode === 'gaming' ? 'border-cyan-500/30' : 'border-slate-200'}`}>
-                  <div>
-                    <h2 className={`text-5xl font-black tracking-tighter uppercase ${layoutMode === 'gaming' ? 'text-white neon-text-blue' : 'text-slate-800'}`}>Relatório Geral</h2>
-                    <p className={`font-bold tracking-[0.4em] uppercase text-xs mt-2 ${layoutMode === 'gaming' ? 'text-cyan-400' : 'text-slate-500'}`}>Manutenções Consolidadas // {new Intl.DateTimeFormat('pt-BR').format(new Date())}</p>
-                  </div>
+                <div className="flex justify-between items-center mb-10 print:hidden border-b pb-6">
+                  <h2 className="text-3xl font-black uppercase">Relatório Final</h2>
                   <div className="flex gap-4">
-                    <button onClick={() => window.print()} className={`px-8 py-3 rounded font-black uppercase tracking-widest flex items-center gap-2 shadow-lg transition-all ${
-                        layoutMode === 'gaming' ? 'bg-white text-slate-950 btn-game' : 'bg-slate-800 text-white hover:bg-black'
-                    }`}><Printer size={20}/> Gerar PDF</button>
-                    <button onClick={onClose} className="text-slate-500 px-8 py-3 font-bold uppercase hover:text-slate-800 transition-colors">Fechar HUD</button>
+                    <button onClick={() => window.print()} className="bg-slate-800 text-white px-6 py-2 rounded font-black uppercase"><Printer size={18}/></button>
+                    <button onClick={onClose} className="bg-red-500 text-white px-6 py-2 rounded font-black uppercase">Fechar</button>
                   </div>
                 </div>
-                <div className={`${layoutMode === 'gaming' ? 'game-card p-1 border-slate-700' : 'bg-white rounded-2xl shadow-2xl border p-4'} shadow-2xl`}>
+                <div className="border border-slate-700 rounded-lg overflow-hidden">
                     <table className="w-full text-xs text-left border-collapse">
                       <thead>
-                        <tr className={`font-black uppercase tracking-widest border-b-2 ${
-                            layoutMode === 'gaming' ? 'bg-slate-800 text-cyan-400 border-cyan-500' : 'bg-slate-50 text-slate-600 border-slate-200'
-                        }`}>
+                        <tr className="bg-slate-800 text-white font-black uppercase tracking-widest border-b border-slate-700">
                             <th className="py-4 px-3">Data</th>
-                            <th className="py-4 px-3">Identidade</th>
-                            <th className="py-4 px-3">Base / Filial</th>
+                            <th className="py-4 px-3">Pedido</th>
+                            <th className="py-4 px-3">Filial</th>
                             <th className="py-4 px-3">Status</th>
                             <th className="py-4 px-3 text-right">Créditos (R$)</th>
                         </tr>
                       </thead>
-                      <tbody className={layoutMode === 'gaming' ? 'text-slate-300' : 'text-slate-700'}>
+                      <tbody>
                         {orders.map(o => (
-                            <tr key={o.id} className={`border-b ${layoutMode === 'gaming' ? 'border-slate-800 hover:bg-slate-800/30' : 'border-slate-100 hover:bg-slate-50'}`}>
+                            <tr key={o.id} className="border-b border-slate-800/50">
                                 <td className="py-3 px-3">{new Intl.DateTimeFormat('pt-BR').format(o.createdAt)}</td>
-                                <td className={`py-3 px-3 font-black ${layoutMode === 'gaming' ? 'text-white' : 'text-slate-900'}`}>#{o.orderNumber}</td>
-                                <td className={`py-3 px-3 uppercase ${layoutMode === 'gaming' ? 'text-cyan-400/70' : 'text-slate-600'}`}>{o.branch}</td>
-                                <td className="py-3 px-3 italic uppercase text-[10px]">{o.status}</td>
-                                <td className={`py-3 px-3 text-right font-black ${layoutMode === 'gaming' ? 'text-white' : 'text-slate-900'}`}>{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(o.value)}</td>
+                                <td className="py-3 px-3 font-black">#{o.orderNumber}</td>
+                                <td className="py-3 px-3 uppercase text-blue-500">{o.branch}</td>
+                                <td className="py-3 px-3 uppercase text-[10px]">{o.status}</td>
+                                <td className="py-3 px-3 text-right font-black">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(o.value)}</td>
                             </tr>
                         ))}
                       </tbody>
                       <tfoot>
-                        <tr className={`font-black text-lg ${layoutMode === 'gaming' ? 'bg-slate-950' : 'bg-slate-50'}`}>
-                            <td colSpan="4" className={`py-6 text-right px-6 uppercase tracking-widest ${layoutMode === 'gaming' ? 'text-cyan-400' : 'text-slate-500'}`}>Total Final:</td>
-                            <td className={`py-6 text-right px-3 font-black ${layoutMode === 'gaming' ? 'text-emerald-400 neon-text-blue' : 'text-emerald-600'}`}>{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(total)}</td>
+                        <tr className="bg-black/20 font-black text-lg">
+                            <td colSpan="4" className="py-6 text-right px-6 uppercase">Total Acumulado:</td>
+                            <td className="py-6 text-right px-3 text-emerald-500">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(total)}</td>
                         </tr>
                       </tfoot>
                     </table>
