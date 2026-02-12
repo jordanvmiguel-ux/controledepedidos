@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Controle de Pedidos Internos</title>
+    <title>SISTEMA DE MANUTENÇÃO - COMANDO CENTRAL</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Import Map para módulos Firebase e React -->
+    <!-- Import Map -->
     <script type="importmap">
     {
         "imports": {
@@ -22,23 +22,65 @@
     }
     </script>
 
-    <!-- Babel para compilar JSX no navegador -->
+    <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&display=swap');
+
+        body {
+            font-family: 'Rajdhani', sans-serif;
+            background-color: #020617;
+            color: #f8fafc;
+            overflow-x: hidden;
+        }
+
+        .neon-border {
+            box-shadow: 0 0 10px rgba(34, 211, 238, 0.3), inset 0 0 5px rgba(34, 211, 238, 0.2);
+            border: 1px solid rgba(34, 211, 238, 0.5);
+        }
+
+        .neon-text-blue {
+            text-shadow: 0 0 8px rgba(34, 211, 238, 0.8);
+        }
+
+        .game-card {
+            background: linear-gradient(135deg, rgba(15, 23, 42, 0.9) 0%, rgba(30, 41, 59, 0.8) 100%);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(51, 65, 85, 1);
+            clip-path: polygon(0 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%);
+        }
+
+        .btn-game {
+            clip-path: polygon(10% 0, 100% 0, 100% 70%, 90% 100%, 0 100%, 0% 30%);
+            transition: all 0.2s ease;
+        }
+
+        .btn-game:hover {
+            transform: scale(1.05);
+            filter: brightness(1.2);
+        }
+
+        .completed-row {
+            background: linear-gradient(90deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.02) 100%) !important;
+            border-left: 4px solid #10b981 !important;
+        }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #020617; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #22d3ee; }
+
         @media print {
-            @page { margin: 0; size: auto; }
-            body { -webkit-print-color-adjust: exact; }
+            body { background: white; color: black; }
+            .print-hidden { display: none !important; }
         }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-900 font-sans">
-    
+<body>
     <div id="root"></div>
 
-    <!-- ================================================================= -->
-    <!--  CONFIGURAÇÃO ATUALIZADA DO FIREBASE                              -->
-    <!-- ================================================================= -->
+    <!-- CONFIGURAÇÃO FIREBASE -->
     <script>
         window.__firebase_config = JSON.stringify({
             apiKey: "AIzaSyC2sCd7LLsDIgtsyKWrz2aaHmBojglK7pg",
@@ -49,13 +91,9 @@
             appId: "1:32715522228:web:65637da97de422c2f497e1",
             measurementId: "G-T6TS6Y6NT5"
         });
-        
-        if (typeof window.__app_id === 'undefined') {
-            window.__app_id = "controle-pedidos-v2";
-        }
+        window.__app_id = "controle-pedidos-game-v1";
     </script>
 
-    <!-- Código da Aplicação -->
     <script type="text/babel" data-type="module">
         import React, { useState, useEffect, useMemo } from 'react';
         import { createRoot } from 'react-dom/client';
@@ -64,65 +102,25 @@
           DollarSign, LayoutDashboard, Filter, CheckCircle2, Clock, 
           XCircle, Package, Tag, User, Truck, Briefcase, Wrench, 
           Box, Send, MessageSquare, CheckSquare, Square, Printer, 
-          Download, Lock, LogOut, AlertTriangle
+          Download, Lock, LogOut, AlertTriangle, ShieldCheck, Zap, 
+          Target, BarChart3, Terminal
         } from 'lucide-react';
 
-        // Firebase Imports
+        // Importações do Firebase
         import { initializeApp } from 'firebase/app';
-        import { 
-          getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken 
-        } from 'firebase/auth';
-        import { 
-          getFirestore, collection, addDoc, updateDoc, deleteDoc, 
-          doc, onSnapshot, serverTimestamp, query 
-        } from 'firebase/firestore';
+        import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+        import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, serverTimestamp, query } from 'firebase/firestore';
 
-        // --- Inicialização segura do Firebase ---
-        let app, auth, db;
-        let firebaseError = null;
+        const firebaseConfig = JSON.parse(window.__firebase_config);
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = window.__app_id;
 
-        try {
-            const firebaseConfig = JSON.parse(window.__firebase_config);
-            app = initializeApp(firebaseConfig);
-            auth = getAuth(app);
-            db = getFirestore(app);
-        } catch (e) {
-            console.error("Erro na inicialização do Firebase:", e);
-            firebaseError = e.message;
-        }
+        // --- Dados Mestres ---
+        const LISTA_MANTENEDORAS = ["AESMS", "ACESC", "AEI", "AESA", "AESGF", "AESJC", "AESPI", "APESU", "ASCEC", "ASPER", "ASSOBES", "AVIES", "BRICOR", "CESC", "CIESPT", "DI GENIO", "SINEC", "SUPERO", "SUPERO EC", "ASSUPERO", "ECEL"].sort();
+        const LISTA_FILIAIS = ["Alphaville", "Anchieta", "Araçatuba", "Araraquara", "Assis", "Bacelar", "Bauru", "Brasilia", "Campinas", "Cancioneiro", "Cid. Universitária", "Goiania Flamboyant", "Jundiai", "Limeira", "Manaus", "Marques S. Vicente", "Norte", "Paraiso", "Paulista", "Paz", "Paz / Henri Dunant", "Pinheiros", "Ribeirão Preto", "Santos", "São José do Rio Pardo", "São José dos Campos", "Sorocaba", "Taquari", "Tatuape", "Vergueiro", "São Jose do Rio Preto"].sort();
 
-        const appId = window.__app_id || 'default-app-id';
-
-        // --- Master Data ---
-        const LISTA_MANTENEDORAS = [
-          "AESMS", "ACESC", "AEI", "AESA", "AESGF", "AESJC", "AESPI", 
-          "APESU", "ASCEC", "ASPER", "ASSOBES", "AVIES", "BRICOR", 
-          "CESC", "CIESPT", "DI GENIO", "SINEC", "SUPERO", 
-          "SUPERO EC", "ASSUPERO", "ECEL"
-        ].sort();
-
-        const LISTA_FILIAIS = [
-          "Alphaville", "Anchieta", "Araçatuba", "Araraquara", "Assis", 
-          "Bacelar", "Bauru", "Brasilia", "Campinas", "Cancioneiro", 
-          "Cid. Universitária", "Goiania Flamboyant", "Jundiai", "Limeira", 
-          "Manaus", "Marques S. Vicente", "Norte", "Paraiso", "Paulista", 
-          "Paz", "Paz / Henri Dunant", "Pinheiros", "Ribeirão Preto", 
-          "Santos", "São José do Rio Pardo", "São José dos Campos", 
-          "Sorocaba", "Taquari", "Tatuape", "Vergueiro", "São Jose do Rio Preto"
-        ].sort();
-
-        // --- Helper para erros ---
-        const handleFirebaseError = (error, action = "executar a ação") => {
-            if (error.code === 'permission-denied') {
-                alert(`ERRO DE PERMISSÃO: Verifique as regras do Firestore no novo banco de dados.`);
-            } else if (error.message && error.message.toLowerCase().includes('billing')) {
-                alert(`ERRO DE BILLING: Ative o plano Blaze no novo projeto.`);
-            } else {
-                alert(`Erro ao ${action}: ${error.message}`);
-            }
-        };
-
-        // --- Componente Principal ---
         function App() {
           const [user, setUser] = useState(null);
           const [orders, setOrders] = useState([]);
@@ -131,31 +129,12 @@
           const [editingOrder, setEditingOrder] = useState(null);
           const [currentUserProfile, setCurrentUserProfile] = useState(null); 
           const [showReport, setShowReport] = useState(false); 
-          const [authError, setAuthError] = useState(null);
           const [passwordModalOpen, setPasswordModalOpen] = useState(false);
           const [pendingProfile, setPendingProfile] = useState(null);
           const [passwordInput, setPasswordInput] = useState('');
 
-          // Autenticação com Fallback para Mismatch
           useEffect(() => {
-            if (firebaseError) { setLoading(false); return; }
-
-            const initAuth = async () => {
-              try {
-                if (typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token) {
-                  try {
-                    await signInWithCustomToken(auth, window.__initial_auth_token);
-                    return;
-                  } catch (e) { console.warn("Token mismatch, tentando anônimo..."); }
-                }
-                await signInAnonymously(auth);
-              } catch (error) {
-                setAuthError(error.message);
-                setLoading(false);
-              }
-            };
-            initAuth();
-
+            signInAnonymously(auth).catch(console.error);
             const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
               setUser(currentUser);
               if(currentUser) setLoading(false);
@@ -163,7 +142,6 @@
             return () => unsubscribe();
           }, []);
 
-          // Listener do Firestore
           useEffect(() => {
             if (!user || !db) return;
             const q = query(collection(db, 'artifacts', appId, 'users', user.uid, 'orders'));
@@ -175,119 +153,122 @@
                 }));
                 loadedOrders.sort((a, b) => b.createdAt - a.createdAt);
                 setOrders(loadedOrders);
-                setLoading(false);
-              }, (error) => { setLoading(false); }
+              }, () => {}
             );
             return () => unsubscribe();
           }, [user]);
 
-          const initiateProfileSwitch = (profile) => {
-            setPendingProfile(profile);
-            setPasswordInput('');
-            setPasswordModalOpen(true);
-          };
-
           const handlePasswordSubmit = (e) => {
             e.preventDefault();
-            let valid = false;
-            
-            // Senhas específicas conforme solicitado
-            if (pendingProfile === 'NELSON' && passwordInput === 'BIA123') valid = true;
-            if (pendingProfile === 'JORDAN' && passwordInput === '1234') valid = true;
-
+            let valid = (pendingProfile === 'NELSON' && passwordInput === 'BIA123') || (pendingProfile === 'JORDAN' && passwordInput === '1234');
             if (valid) {
                 setCurrentUserProfile(pendingProfile);
                 setPasswordModalOpen(false);
-                setPasswordInput(''); // Limpa a senha após sucesso
+                setPasswordInput('');
             } else {
-                alert("Senha incorreta!");
-                setPasswordInput(''); // Limpa a senha após erro
+                alert("ACESSO NEGADO: Senha Inválida");
+                setPasswordInput('');
             }
           };
 
           const handleSave = async (orderData) => {
             try {
               const collectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'orders');
-              
-              // Garante que o novo lançamento receba o perfil logado atual
               const dataToSave = { 
                 ...orderData, 
                 userProfile: orderData.id ? (orderData.userProfile || 'JORDAN') : currentUserProfile 
               };
-
               if (editingOrder) {
-                await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'orders', editingOrder.id), {
-                  ...dataToSave, updatedAt: serverTimestamp()
-                });
+                await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'orders', editingOrder.id), { ...dataToSave, updatedAt: serverTimestamp() });
               } else {
-                await addDoc(collectionRef, { 
-                  ...dataToSave, 
-                  createdAt: serverTimestamp(), 
-                  completed: false 
-                });
+                await addDoc(collectionRef, { ...dataToSave, createdAt: serverTimestamp(), completed: false });
               }
               setView('list');
               setEditingOrder(null);
-            } catch (error) { handleFirebaseError(error, "salvar"); }
+            } catch (error) { alert("Erro ao salvar no banco de dados."); }
           };
 
-          if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>;
+          if (loading) return (
+            <div className="min-h-screen flex flex-col items-center justify-center bg-slate-950">
+                <div className="w-64 h-2 bg-slate-800 rounded-full overflow-hidden mb-4 neon-border">
+                    <div className="h-full bg-cyan-400 animate-[pulse_1s_infinite] shadow-[0_0_10px_#22d3ee]"></div>
+                </div>
+                <p className="text-cyan-400 font-bold tracking-widest animate-pulse uppercase">Carregando Sistema...</p>
+            </div>
+          );
 
           return (
-            <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
+            <div className="min-h-screen pb-10">
+              {/* MODAL DE LOGIN */}
               {passwordModalOpen && (
-                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-                  <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
-                    <div className="bg-slate-800 p-4 text-white text-center">
-                      <Lock size={20} className="mx-auto mb-2" />
-                      <h3 className="font-bold uppercase tracking-tight">Login: {pendingProfile}</h3>
+                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+                  <div className="game-card w-full max-w-sm p-1">
+                    <div className="bg-slate-900 p-4 border-b border-cyan-500/30 flex items-center justify-center gap-2">
+                      <ShieldCheck className="text-cyan-400" size={24} />
+                      <h3 className="font-bold text-xl text-cyan-400 tracking-tighter uppercase">Identifique-se: {pendingProfile}</h3>
                     </div>
                     <form onSubmit={handlePasswordSubmit} className="p-6">
                       <input 
-                        type="password" autoFocus placeholder="Senha"
-                        className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 mb-4 text-center text-lg"
+                        type="password" autoFocus placeholder="SENHA DE ACESSO"
+                        className="w-full px-4 py-3 bg-slate-950 border border-slate-700 rounded-lg focus:ring-2 focus:ring-cyan-500 mb-6 text-center text-xl tracking-[0.5em] text-white outline-none"
                         value={passwordInput} onChange={e => setPasswordInput(e.target.value)}
                       />
-                      <div className="flex gap-2">
-                        <button type="button" onClick={() => setPasswordModalOpen(false)} className="flex-1 py-2 text-slate-500 font-medium">Cancelar</button>
-                        <button type="submit" className="flex-1 py-2 bg-blue-600 text-white font-bold rounded-lg transition-colors hover:bg-blue-700">Entrar</button>
+                      <div className="flex gap-3">
+                        <button type="button" onClick={() => setPasswordModalOpen(false)} className="flex-1 py-3 text-slate-400 font-bold uppercase hover:text-white transition-colors">Cancelar</button>
+                        <button type="submit" className="flex-1 py-3 bg-cyan-600 text-white font-black uppercase rounded-lg btn-game shadow-[0_0_15px_rgba(8,145,178,0.4)]">Acessar</button>
                       </div>
                     </form>
                   </div>
                 </div>
               )}
 
-              <header className="bg-white border-b border-slate-200 sticky top-0 z-10 px-4 py-3 shadow-sm print:hidden">
+              {/* HUD DO CABEÇALHO */}
+              <header className="bg-slate-900/80 border-b border-cyan-500/20 sticky top-0 z-10 px-4 py-2 backdrop-blur-md print:hidden">
                 <div className="max-w-6xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
-                  <div className="flex items-center gap-2">
-                    <div className="bg-blue-600 p-2 rounded-lg text-white"><FileText size={20} /></div>
-                    <h1 className="text-lg font-bold">Controle de Manutenções</h1>
-                  </div>
                   <div className="flex items-center gap-3">
-                    <div className="flex bg-slate-100 p-1 rounded-lg border">
+                    <div className="p-2 bg-cyan-500/10 rounded-lg border border-cyan-500/50">
+                        <Terminal className="text-cyan-400" size={24} />
+                    </div>
+                    <div>
+                        <h1 className="text-xl font-black tracking-tighter text-white neon-text-blue leading-none uppercase">Centro de Comando</h1>
+                        <p className="text-[10px] text-cyan-400/70 font-bold tracking-[0.2em] uppercase">SISTEMA v2.0 // CORE PRINCIPAL</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-4">
+                    <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700 shadow-inner">
                       {['JORDAN', 'NELSON'].map(p => (
-                        <button key={p} onClick={() => initiateProfileSwitch(p)} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${currentUserProfile === p ? 'bg-white text-blue-700 shadow-sm ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}>{p}</button>
+                        <button 
+                            key={p} 
+                            onClick={() => { setPendingProfile(p); setPasswordInput(''); setPasswordModalOpen(true); }} 
+                            className={`px-4 py-1.5 rounded-md text-xs font-black transition-all ${currentUserProfile === p ? 'bg-cyan-500 text-slate-950 shadow-[0_0_10px_#22d3ee]' : 'text-slate-500 hover:text-slate-300'}`}
+                        >
+                            {p === currentUserProfile ? <span className="flex items-center gap-1"><Zap size={12}/> {p}</span> : p}
+                        </button>
                       ))}
                     </div>
                     {currentUserProfile && (
-                      <>
-                        <button onClick={() => setShowReport(true)} className="bg-white border p-2 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors" title="Relatório"><FileText size={18} /></button>
-                        <button onClick={() => { setEditingOrder(null); setView('form'); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 shadow-sm hover:bg-blue-700 transition-colors"><Plus size={18}/> Novo</button>
-                        <button onClick={() => setCurrentUserProfile(null)} className="text-slate-400 hover:text-red-500 transition-colors" title="Sair"><LogOut size={18} /></button>
-                      </>
+                      <div className="flex items-center gap-2 border-l border-slate-700 pl-4">
+                        <button onClick={() => setShowReport(true)} className="p-2 bg-slate-800 text-cyan-400 rounded-lg border border-slate-700 hover:bg-slate-700" title="Relatório de Missões"><BarChart3 size={20} /></button>
+                        <button onClick={() => { setEditingOrder(null); setView('form'); }} className="bg-emerald-500 text-slate-950 px-4 py-2 rounded-lg font-black uppercase text-xs btn-game shadow-[0_0_15px_rgba(16,185,129,0.4)] flex items-center gap-2"><Plus size={18}/> Nova Missão</button>
+                        <button onClick={() => setCurrentUserProfile(null)} className="p-2 text-slate-500 hover:text-red-500 transition-colors" title="Sair"><LogOut size={20} /></button>
+                      </div>
                     )}
                   </div>
                 </div>
               </header>
 
-              <main className="max-w-6xl mx-auto p-4">
+              <main className="max-w-6xl mx-auto p-4 pt-8">
                 {!currentUserProfile ? (
-                  <div className="text-center py-24">
-                    <div className="bg-slate-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
-                      <Lock size={40} className="text-slate-300"/>
+                  <div className="text-center py-32 animate-in fade-in zoom-in duration-500">
+                    <div className="relative inline-block mb-8">
+                        <div className="absolute inset-0 bg-cyan-500 blur-3xl opacity-10 animate-pulse"></div>
+                        <div className="game-card p-8 neon-border relative">
+                            <Lock size={64} className="mx-auto text-cyan-400 mb-4 animate-bounce" />
+                            <h2 className="text-3xl font-black text-white tracking-tighter neon-text-blue uppercase">Sistema Bloqueado</h2>
+                            <p className="text-cyan-400/60 font-bold uppercase text-xs tracking-widest mt-2">Selecione um operador para prosseguir</p>
+                        </div>
                     </div>
-                    <h2 className="text-xl font-bold text-slate-700">Acesso Restrito</h2>
-                    <p className="text-slate-400 mt-2">Selecione JORDAN ou NELSON no topo para acessar o sistema.</p>
                   </div>
                 ) : (
                   view === 'list' ? (
@@ -308,185 +289,242 @@
           );
         }
 
-        // --- Componente: Dashboard e Lista ---
+        // --- Componente: Dashboard e Log de Missões ---
         function DashboardAndList({ orders, onEdit, onDelete, onUpdateNote, onToggleComplete, currentUserProfile, showReport, onCloseReport }) {
           const [searchTerm, setSearchTerm] = useState('');
           const [filterBranch, setFilterBranch] = useState('');
           const [filterMaintainer, setFilterMaintainer] = useState('');
           const [filterStatus, setFilterStatus] = useState('');
-          const [filterType, setFilterType] = useState('');
-          
-          // O filtro de usuário inicia com o perfil logado
           const [filterUser, setFilterUser] = useState(currentUserProfile);
-          
-          useEffect(() => {
-            setFilterUser(currentUserProfile);
-          }, [currentUserProfile]);
-
           const [noteModal, setNoteModal] = useState({ open: false, order: null, text: '' });
 
           const filteredOrders = useMemo(() => {
             return orders.filter(o => {
               const term = searchTerm.toLowerCase();
-              const profile = o.userProfile || 'JORDAN'; // Trata dados sem perfil como JORDAN
-              
               return (
                 (o.orderNumber?.toLowerCase().includes(term) || o.branch?.toLowerCase().includes(term) || o.supplier?.toLowerCase().includes(term)) &&
                 (!filterBranch || o.branch === filterBranch) &&
                 (!filterMaintainer || o.maintainer === filterMaintainer) &&
                 (!filterStatus || o.status === filterStatus) &&
-                (!filterType || o.type === filterType) &&
-                (!filterUser || profile === filterUser)
+                (!filterUser || (o.userProfile || 'JORDAN') === filterUser)
               );
             });
-          }, [orders, searchTerm, filterBranch, filterMaintainer, filterStatus, filterType, filterUser]);
+          }, [orders, searchTerm, filterBranch, filterMaintainer, filterStatus, filterUser]);
 
-          const totalValue = useMemo(() => filteredOrders.reduce((acc, curr) => acc + (curr.status === 'reprovado Enio' ? 0 : parseFloat(curr.value || 0)), 0), [filteredOrders]);
+          const stats = useMemo(() => {
+            const valid = filteredOrders.filter(o => o.status !== 'reprovado Enio');
+            const total = valid.reduce((acc, curr) => acc + parseFloat(curr.value || 0), 0);
+            return { count: filteredOrders.length, total };
+          }, [filteredOrders]);
 
           return (
-            <div className="space-y-6">
+            <div className="space-y-6 animate-in slide-in-from-right-10 duration-500">
               {showReport && <ReportModal orders={filteredOrders} onClose={onCloseReport} />}
-              {noteModal.open && (
-                <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-                  <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-2xl">
-                    <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><MessageSquare size={20} className="text-blue-500"/> Observações</h3>
-                    <textarea className="w-full h-32 p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none resize-none" value={noteModal.text} onChange={e => setNoteModal({...noteModal, text: e.target.value})} placeholder="Digite as observações aqui..." />
-                    <div className="flex justify-end gap-2 mt-4">
-                      <button onClick={() => setNoteModal({open: false, order: null, text: ''})} className="px-4 py-2 text-slate-500 font-medium">Cancelar</button>
-                      <button onClick={() => { onUpdateNote(noteModal.order.id, noteModal.text); setNoteModal({open: false, order: null, text: ''}); }} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold">Salvar</button>
-                    </div>
-                  </div>
+              
+              {/* GADGETS DE ESTATÍSTICAS */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="game-card p-4 relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-20 transition-opacity"><Target size={48} /></div>
+                  <p className="text-[10px] text-cyan-400 font-black uppercase tracking-[0.2em]">Total de Missões</p>
+                  <p className="text-4xl font-black text-white neon-text-blue">{stats.count}</p>
                 </div>
-              )}
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div className="bg-white p-4 rounded-xl border shadow-sm"><p className="text-xs text-slate-500 uppercase font-bold tracking-wider">Total Pedidos</p><p className="text-2xl font-bold">{filteredOrders.length}</p></div>
-                <div className="bg-white p-4 rounded-xl border shadow-sm col-span-2"><p className="text-xs text-slate-500 uppercase font-bold tracking-wider">Valor Total (Visíveis)</p><p className="text-2xl font-bold text-emerald-600">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalValue)}</p></div>
-                <div className="bg-white p-4 rounded-xl border shadow-sm"><p className="text-xs text-slate-500 uppercase font-bold tracking-wider">Perfil Ativo</p><p className="text-2xl font-bold text-blue-600 uppercase">{currentUserProfile}</p></div>
-              </div>
-
-              <div className="bg-white p-4 rounded-xl border shadow-sm space-y-3">
-                <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} /><input type="text" placeholder="Buscar por número, filial, fornecedor..." className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                  <select className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium" value={filterUser} onChange={e => setFilterUser(e.target.value)}><option value="">Todos Resp.</option><option value="JORDAN">JORDAN</option><option value="NELSON">NELSON</option></select>
-                  <select className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium" value={filterBranch} onChange={e => setFilterBranch(e.target.value)}><option value="">Filial</option>{LISTA_FILIAIS.map(f => <option key={f} value={f}>{f}</option>)}</select>
-                  <select className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium" value={filterMaintainer} onChange={e => setFilterMaintainer(e.target.value)}><option value="">Mantenedora</option>{LISTA_MANTENEDORAS.map(m => <option key={m} value={m}>{m}</option>)}</select>
-                  <select className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium" value={filterType} onChange={e => setFilterType(e.target.value)}><option value="">Tipo</option><option value="Produto">Produto</option><option value="Serviço">Serviço</option></select>
-                  <select className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="">Status</option><option value="aprovado">Aprovado</option><option value="enviado">Enviado</option><option value="ag. aprovação">Ag. Aprovação</option><option value="aguardando justificativa">Ag. Justificativa</option><option value="reprovado Enio">Reprovado Enio</option></select>
+                <div className="game-card p-4 col-span-1 sm:col-span-2 relative overflow-hidden border-emerald-500/30 group">
+                  <div className="absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-20 transition-opacity"><Zap size={48} /></div>
+                  <p className="text-[10px] text-emerald-400 font-black uppercase tracking-[0.2em]">Créditos Alocados</p>
+                  <p className="text-4xl font-black text-emerald-400 shadow-emerald-500/20 drop-shadow-md">
+                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(stats.total)}
+                  </p>
                 </div>
               </div>
 
-              <div className="bg-white rounded-xl border shadow-sm overflow-hidden overflow-x-auto">
-                <table className="w-full text-left text-sm min-w-[600px]">
-                  <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] border-b">
-                    <tr><th className="px-4 py-3">Status/Tipo</th><th className="px-4 py-3">Pedido/Filial</th><th className="px-4 py-3 text-right">Valor</th><th className="px-4 py-3 text-center">Resp/Obs/Fim</th><th className="px-4 py-3 text-right">Ações</th></tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredOrders.map(o => (
-                      <tr key={o.id} className={`hover:bg-slate-50 transition-colors ${o.completed ? 'bg-emerald-50/60' : ''}`}>
-                        <td className="px-4 py-3">
-                          <div className="flex flex-col gap-1 items-start">
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${o.status === 'aprovado' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : o.status === 'reprovado Enio' ? 'bg-red-100 text-red-700 border-red-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`}>{o.status}</span>
-                            <span className="text-[10px] text-slate-400 uppercase font-bold tracking-tight">{o.type}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <p className="font-bold text-slate-800">#{o.orderNumber}</p>
-                          <p className="text-[10px] text-slate-500 uppercase">{o.branch}</p>
-                        </td>
-                        <td className="px-4 py-3 text-right font-bold text-slate-700">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(o.value)}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center justify-center gap-2">
-                            <span className="text-[9px] font-bold bg-white border border-slate-200 px-1.5 rounded uppercase text-slate-500 shadow-sm" title="Responsável">{o.userProfile || 'JORDAN'}</span>
-                            <button onClick={() => setNoteModal({open: true, order: o, text: o.notes || ''})} className={`transition-colors ${o.notes ? 'text-blue-600' : 'text-slate-300 hover:text-slate-500'}`} title="Ver Observações"><MessageSquare size={16} fill={o.notes ? 'currentColor' : 'none'}/></button>
-                            <button onClick={() => onToggleComplete(o.id, o.completed)} className={`transition-colors ${o.completed ? 'text-emerald-600' : 'text-slate-300 hover:text-slate-500'}`} title="Concluir Pedido">{o.completed ? <CheckSquare size={18}/> : <Square size={18}/>}</button>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex justify-end gap-1">
-                            <button onClick={() => onEdit(o)} className="p-1.5 hover:bg-blue-100 rounded-md text-blue-600 transition-colors"><Edit2 size={14}/></button>
-                            <button onClick={() => window.confirm("Excluir este lançamento?") && onDelete(o.id)} className="p-1.5 hover:bg-red-100 rounded-md text-red-600 transition-colors"><Trash2 size={14}/></button>
-                          </div>
-                        </td>
+              {/* HUD DE FILTROS */}
+              <div className="game-card p-4 space-y-4 border-slate-700/50 bg-slate-900/40">
+                <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-cyan-400/50" size={20} />
+                    <input 
+                        type="text" placeholder="ESCANEANDO LANÇAMENTOS..." 
+                        className="w-full pl-10 pr-4 py-3 bg-slate-950/50 border border-cyan-500/20 rounded-lg text-sm focus:border-cyan-400 outline-none text-white font-bold tracking-wider uppercase" 
+                        value={searchTerm} onChange={e => setSearchTerm(e.target.value)} 
+                    />
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <select className="bg-slate-950 border border-slate-700 text-cyan-400 p-2 rounded text-xs font-bold uppercase outline-none focus:border-cyan-400" value={filterUser} onChange={e => setFilterUser(e.target.value)}><option value="">OPERADOR: TODOS</option><option value="JORDAN">OPERADOR: JORDAN</option><option value="NELSON">OPERADOR: NELSON</option></select>
+                  <select className="bg-slate-950 border border-slate-700 text-cyan-400 p-2 rounded text-xs font-bold uppercase outline-none focus:border-cyan-400" value={filterBranch} onChange={e => setFilterBranch(e.target.value)}><option value="">FILIAL: TODAS</option>{LISTA_FILIAIS.map(f => <option key={f} value={f}>{f.toUpperCase()}</option>)}</select>
+                  <select className="bg-slate-950 border border-slate-700 text-cyan-400 p-2 rounded text-xs font-bold uppercase outline-none focus:border-cyan-400" value={filterMaintainer} onChange={e => setFilterMaintainer(e.target.value)}><option value="">MANTENEDORA</option>{LISTA_MANTENEDORAS.map(m => <option key={m} value={m}>{m}</option>)}</select>
+                  <select className="bg-slate-950 border border-slate-700 text-cyan-400 p-2 rounded text-xs font-bold uppercase outline-none focus:border-cyan-400" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="">STATUS: GERAL</option><option value="aprovado">STATUS: APROVADO</option><option value="enviado">STATUS: ENVIADO</option><option value="ag. aprovação">STATUS: AG. APROVAÇÃO</option><option value="aguardando justificativa">STATUS: AG. JUSTIF.</option><option value="reprovado Enio">STATUS: REPROVADO</option></select>
+                </div>
+              </div>
+
+              {/* LOG DE MISSÕES (TABELA) */}
+              <div className="game-card overflow-hidden border-slate-800">
+                <div className="bg-slate-800/50 p-3 flex items-center justify-between border-b border-slate-700">
+                    <h3 className="text-xs font-black text-white tracking-[0.3em] flex items-center gap-2 uppercase"><Zap size={14} className="text-yellow-400"/> Log de Missões Ativas</h3>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-900/80 text-cyan-400 font-black uppercase text-[10px] tracking-widest border-b border-slate-800">
+                      <tr>
+                        <th className="px-6 py-4">Status / Tipo</th>
+                        <th className="px-6 py-4">Data / Identidade</th>
+                        <th className="px-6 py-4">Fornecedor</th>
+                        <th className="px-6 py-4 text-right">Créditos (R$)</th>
+                        <th className="px-6 py-4 text-center">Ações HUD</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/50">
+                      {filteredOrders.map(o => (
+                        <tr key={o.id} className={`transition-all duration-300 ${o.completed ? 'completed-row' : 'hover:bg-slate-800/30'}`}>
+                          <td className="px-6 py-4">
+                            <div className="flex flex-col gap-2 items-start">
+                              <span className={`text-[10px] font-black px-3 py-1 rounded-sm uppercase tracking-tighter border shadow-[0_0_5px_rgba(0,0,0,0.5)] ${o.status === 'aprovado' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50' : o.status === 'reprovado Enio' ? 'bg-red-500/20 text-red-400 border-red-500/50' : 'bg-amber-500/20 text-amber-400 border-amber-500/50'}`}>{o.status}</span>
+                              <span className="text-[10px] text-slate-500 font-bold flex items-center gap-1 uppercase tracking-wider">{o.type === 'Produto' ? <Box size={10}/> : <Wrench size={10}/>} {o.type}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <p className="font-black text-white text-base leading-none">#{o.orderNumber}</p>
+                            <p className="text-[11px] text-cyan-400 font-bold uppercase mt-1">{o.branch}</p>
+                            <p className="text-[9px] text-slate-500 font-medium">{new Intl.DateTimeFormat('pt-BR').format(o.createdAt)}</p>
+                          </td>
+                          <td className="px-6 py-4">
+                              <p className="text-[11px] text-blue-400 font-black uppercase tracking-tight truncate max-w-[150px]" title={o.supplier}>{o.supplier || 'SISTEMA'}</p>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <span className="font-black text-white text-lg">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(o.value)}</span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center justify-center gap-3">
+                              <button onClick={() => onToggleComplete(o.id, o.completed)} className={`p-2 rounded border transition-all ${o.completed ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-[0_0_10px_#10b981]' : 'bg-slate-900 text-slate-600 border-slate-700 hover:border-cyan-500'}`} title="Marcar como Concluído">{o.completed ? <CheckSquare size={20}/> : <Square size={20}/>}</button>
+                              <button onClick={() => onEdit(o)} className="p-2 bg-slate-900 border border-slate-700 rounded text-blue-400 hover:border-blue-400 transition-all" title="Editar Registro"><Edit2 size={16}/></button>
+                              <button onClick={() => window.confirm("ABORTAR E DELETAR MISSÃO?") && onDelete(o.id)} className="p-2 bg-slate-900 border border-slate-700 rounded text-red-500 hover:border-red-500 transition-all" title="Excluir Registro"><Trash2 size={16}/></button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           );
         }
 
-        // --- Componente: Formulário ---
+        // --- Componente: Formulário de Entrada ---
         function OrderForm({ initialData, onSave, onCancel, currentUserProfile }) {
           const [formData, setFormData] = useState({
             maintainer: '', branch: '', orderNumber: '', supplier: '', 
             value: '', status: 'ag. aprovação', type: 'Produto', notes: '', userProfile: currentUserProfile
           });
 
-          useEffect(() => { 
-            if(initialData) {
-              setFormData({...initialData}); 
-            } else {
-              setFormData(prev => ({ ...prev, userProfile: currentUserProfile }));
-            }
-          }, [initialData, currentUserProfile]);
+          useEffect(() => { if(initialData) setFormData({...initialData}); }, [initialData]);
 
           return (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden max-w-2xl mx-auto">
-              <div className="bg-slate-50 p-5 border-b border-slate-200 flex justify-between items-center">
+            <div className="game-card max-w-2xl mx-auto border-cyan-500/30 overflow-hidden animate-in zoom-in duration-300">
+              <div className="bg-slate-900 p-5 border-b border-cyan-500/20 flex justify-between items-center">
                 <div>
-                    <h2 className="font-bold text-slate-800">{initialData ? 'Editar Lançamento' : 'Novo Lançamento'}</h2>
-                    <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest mt-0.5">Perfil: {formData.userProfile}</p>
+                    <h2 className="text-2xl font-black text-white tracking-tighter neon-text-blue uppercase">{initialData ? 'Editar Missão' : 'Novo Lançamento'}</h2>
+                    <p className="text-[10px] text-cyan-400 font-black uppercase tracking-[0.3em]">Operador Ativo: {currentUserProfile}</p>
                 </div>
-                <button onClick={onCancel} className="p-1 hover:bg-slate-200 rounded-full transition-colors"><X/></button>
+                <button onClick={onCancel} className="p-2 bg-slate-800 rounded-full text-slate-400 hover:text-white"><X/></button>
               </div>
-              <form onSubmit={e => { e.preventDefault(); onSave(formData); }} className="p-6 space-y-5">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">1. Mantenedor</label><input list="m-list" className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={formData.maintainer} onChange={e => setFormData({...formData, maintainer: e.target.value})} placeholder="Selecione..." /><datalist id="m-list">{LISTA_MANTENEDORAS.map(m => <option key={m} value={m}/>)}</datalist></div>
-                  <div className="space-y-1"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">2. Filial</label><input list="f-list" className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={formData.branch} onChange={e => setFormData({...formData, branch: e.target.value})} placeholder="Selecione..." /><datalist id="f-list">{LISTA_FILIAIS.map(f => <option key={f} value={f}/>)}</datalist></div>
-                  <div className="space-y-1"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">3. Número Pedido</label><input className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={formData.orderNumber} onChange={e => setFormData({...formData, orderNumber: e.target.value})} required placeholder="Ex: 123456" /></div>
-                  <div className="space-y-1"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">4. Fornecedor</label><input className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={formData.supplier} onChange={e => setFormData({...formData, supplier: e.target.value})} placeholder="Nome da empresa..." /></div>
-                  <div className="space-y-1"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">5. Valor (R$)</label><input type="number" step="0.01" className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none font-bold" value={formData.value} onChange={e => setFormData({...formData, value: e.target.value})} required placeholder="0,00" /></div>
-                  <div className="space-y-1"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">7. Tipo</label><div className="flex gap-2 p-1 bg-slate-100 rounded-lg"><button type="button" onClick={() => setFormData({...formData, type: 'Produto'})} className={`flex-1 py-1.5 rounded-md text-xs font-bold transition-all ${formData.type === 'Produto' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Produto</button><button type="button" onClick={() => setFormData({...formData, type: 'Serviço'})} className={`flex-1 py-1.5 rounded-md text-xs font-bold transition-all ${formData.type === 'Serviço' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Serviço</button></div></div>
+              <form onSubmit={e => { e.preventDefault(); onSave(formData); }} className="p-8 space-y-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-cyan-400 uppercase tracking-widest">01. Mantenedora</label>
+                    <input list="m-list" className="w-full p-3 bg-slate-950 border border-slate-700 rounded text-white font-bold focus:border-cyan-400 outline-none transition-all uppercase" value={formData.maintainer} onChange={e => setFormData({...formData, maintainer: e.target.value})} placeholder="Selecione..." /><datalist id="m-list">{LISTA_MANTENEDORAS.map(m => <option key={m} value={m}/>)}</datalist>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-cyan-400 uppercase tracking-widest">02. Filial / Base</label>
+                    <input list="f-list" className="w-full p-3 bg-slate-950 border border-slate-700 rounded text-white font-bold focus:border-cyan-400 outline-none transition-all uppercase" value={formData.branch} onChange={e => setFormData({...formData, branch: e.target.value})} placeholder="Localização..." /><datalist id="f-list">{LISTA_FILIAIS.map(f => <option key={f} value={f}/>)}</datalist>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-cyan-400 uppercase tracking-widest">03. Identificador ID</label>
+                    <input className="w-full p-3 bg-slate-950 border border-slate-700 rounded text-white font-bold focus:border-cyan-400 outline-none transition-all" value={formData.orderNumber} onChange={e => setFormData({...formData, orderNumber: e.target.value})} required placeholder="Número do pedido..." />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-cyan-400 uppercase tracking-widest">04. Fornecedor</label>
+                    <input className="w-full p-3 bg-slate-950 border border-slate-700 rounded text-white font-bold focus:border-cyan-400 outline-none transition-all uppercase" value={formData.supplier} onChange={e => setFormData({...formData, supplier: e.target.value})} placeholder="Nome da empresa..." />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-cyan-400 uppercase tracking-widest">05. Créditos (R$)</label>
+                    <input type="number" step="0.01" className="w-full p-3 bg-slate-950 border border-slate-700 rounded text-emerald-400 font-black text-xl focus:border-emerald-400 outline-none transition-all" value={formData.value} onChange={e => setFormData({...formData, value: e.target.value})} required placeholder="0,00" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-cyan-400 uppercase tracking-widest">06. Categoria</label>
+                    <div className="flex gap-2 p-1 bg-slate-950 rounded border border-slate-800">
+                        <button type="button" onClick={() => setFormData({...formData, type: 'Produto'})} className={`flex-1 py-2 rounded text-xs font-black uppercase tracking-tighter transition-all ${formData.type === 'Produto' ? 'bg-cyan-500 text-slate-950' : 'text-slate-500 hover:text-slate-300'}`}>Produto</button>
+                        <button type="button" onClick={() => setFormData({...formData, type: 'Serviço'})} className={`flex-1 py-2 rounded text-xs font-black uppercase tracking-tighter transition-all ${formData.type === 'Serviço' ? 'bg-orange-500 text-slate-950' : 'text-slate-500 hover:text-slate-300'}`}>Serviço</button>
+                    </div>
+                  </div>
                 </div>
-                <div className="space-y-2"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">6. Status do Pedido</label><div className="grid grid-cols-2 sm:grid-cols-3 gap-2">{['aprovado', 'enviado', 'ag. aprovação', 'aguardando justificativa', 'reprovado Enio'].map(s => <button key={s} type="button" onClick={() => setFormData({...formData, status: s})} className={`py-2 rounded-lg text-[10px] font-bold border transition-all uppercase ${formData.status === s ? 'bg-slate-800 text-white border-slate-900 shadow-md' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'}`}>{s}</button>)}</div></div>
-                <div className="space-y-1"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Observações</label><textarea className="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none resize-none" rows="2" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} placeholder="Informações adicionais..." /></div>
-                <div className="flex gap-3 pt-4 border-t border-slate-100"><button type="button" onClick={onCancel} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl transition-colors">Cancelar</button><button type="submit" className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-blue-700 transition-all active:scale-[0.98]"><Save size={20}/> Salvar Lançamento</button></div>
+                <div className="space-y-3">
+                    <label className="text-xs font-black text-cyan-400 uppercase tracking-widest">07. Status Operacional</label>
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                        {['aprovado', 'enviado', 'ag. aprovação', 'aguardando justificativa', 'reprovado Enio'].map(s => (
+                            <button key={s} type="button" onClick={() => setFormData({...formData, status: s})} className={`py-2 rounded border text-[9px] font-black uppercase tracking-tighter transition-all ${formData.status === s ? 'bg-white text-slate-900 border-white shadow-[0_0_10px_white]' : 'bg-slate-900 text-slate-500 border-slate-800 hover:border-slate-600'}`}>{s}</button>
+                        ))}
+                    </div>
+                </div>
+                <div className="space-y-2">
+                    <label className="text-xs font-black text-cyan-400 uppercase tracking-widest">08. Log de Observações</label>
+                    <textarea className="w-full p-3 bg-slate-950 border border-slate-700 rounded text-white font-medium focus:border-cyan-400 outline-none resize-none" rows="2" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} placeholder="Inserir dados extras do comando..." />
+                </div>
+                <div className="flex gap-4 pt-6 border-t border-slate-800">
+                    <button type="button" onClick={onCancel} className="flex-1 py-4 text-slate-500 font-black uppercase tracking-widest hover:text-white transition-colors">Abortar</button>
+                    <button type="submit" className="flex-[2] py-4 bg-cyan-600 text-white rounded-lg font-black uppercase tracking-widest btn-game shadow-[0_0_20px_rgba(8,145,178,0.5)] flex items-center justify-center gap-2"><Save size={20}/> Gravar Registro</button>
+                </div>
               </form>
             </div>
           );
         }
 
-        // --- Componente: Modal de Relatório ---
+        // --- Componente: Modal de Relatório (Leitura de Dados) ---
         function ReportModal({ orders, onClose }) {
           const total = orders.reduce((acc, curr) => acc + (curr.status === 'reprovado Enio' ? 0 : parseFloat(curr.value || 0)), 0);
           return (
-            <div className="fixed inset-0 z-[100] bg-white overflow-y-auto animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <div className="fixed inset-0 z-[100] bg-slate-950 overflow-y-auto animate-in fade-in slide-in-from-bottom-10 duration-500">
               <div className="p-8 max-w-5xl mx-auto">
-                <div className="flex justify-between items-center mb-10 print:hidden border-b pb-6">
+                <div className="flex justify-between items-end mb-12 print:hidden border-b border-cyan-500/30 pb-8">
                   <div>
-                    <h2 className="text-3xl font-black text-slate-900">Relatório de Manutenções</h2>
-                    <p className="text-slate-500 text-sm mt-1">Gerado em {new Date().toLocaleDateString('pt-BR')} às {new Date().toLocaleTimeString('pt-BR')}</p>
+                    <h2 className="text-5xl font-black text-white tracking-tighter neon-text-blue uppercase">Relatório de Missão</h2>
+                    <p className="text-cyan-400 font-bold tracking-[0.4em] uppercase text-xs mt-2">Dados Consolidados // {new Intl.DateTimeFormat('pt-BR').format(new Date())}</p>
                   </div>
-                  <div className="flex gap-3">
-                    <button onClick={() => window.print()} className="bg-slate-900 text-white px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-black transition-all active:scale-95"><Printer size={18}/> Imprimir PDF</button>
-                    <button onClick={onClose} className="bg-slate-100 text-slate-600 px-6 py-2.5 rounded-xl font-bold hover:bg-slate-200 transition-all">Fechar</button>
+                  <div className="flex gap-4">
+                    <button onClick={() => window.print()} className="bg-white text-slate-950 px-8 py-3 rounded-sm font-black uppercase tracking-widest btn-game flex items-center gap-2"><Printer size={20}/> Gerar PDF</button>
+                    <button onClick={onClose} className="text-slate-500 px-8 py-3 font-bold uppercase hover:text-white">Fechar HUD</button>
                   </div>
                 </div>
-                <table className="w-full text-[11px] text-left border-collapse">
-                  <thead><tr className="border-b-2 border-slate-900 font-bold uppercase text-slate-700"><th className="py-3 px-2">Data</th><th className="py-3 px-2">Pedido</th><th className="py-3 px-2">Filial</th><th className="py-3 px-2">Tipo</th><th className="py-3 px-2">Status</th><th className="py-3 px-2">Responsável</th><th className="py-3 px-2 text-right">Valor</th></tr></thead>
-                  <tbody>{orders.map(o => <tr key={o.id} className="border-b border-slate-100 group">
-                    <td className="py-2.5 px-2">{new Intl.DateTimeFormat('pt-BR').format(o.createdAt)}</td>
-                    <td className="py-2.5 px-2 font-bold">#{o.orderNumber}</td>
-                    <td className="py-2.5 px-2 uppercase text-slate-600">{o.branch}</td>
-                    <td className="py-2.5 px-2">{o.type}</td>
-                    <td className="py-2.5 px-2 capitalize">{o.status}</td>
-                    <td className="py-2.5 px-2 font-bold text-slate-500">{o.userProfile || 'JORDAN'}</td>
-                    <td className="py-2.5 px-2 text-right font-bold text-slate-900">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(o.value)}</td>
-                  </tr>)}</tbody>
-                  <tfoot><tr className="border-t-2 border-slate-900 font-bold text-sm bg-slate-50"><td colSpan="6" className="py-4 text-right px-4 uppercase tracking-wider">Total Geral (Exceto Reprovados):</td><td className="py-4 text-right px-2 text-emerald-600 text-lg font-black">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(total)}</td></tr></tfoot>
-                </table>
+                <div className="game-card p-1 border-slate-700 shadow-2xl">
+                    <table className="w-full text-xs text-left border-collapse bg-slate-900/50">
+                      <thead>
+                        <tr className="border-b-2 border-cyan-500 font-black uppercase text-cyan-400 bg-slate-800">
+                            <th className="py-4 px-3">Data Sinc.</th>
+                            <th className="py-4 px-3">Identidade</th>
+                            <th className="py-4 px-3">Base / Filial</th>
+                            <th className="py-4 px-3">Status</th>
+                            <th className="py-4 px-3">Operador</th>
+                            <th className="py-4 px-3 text-right">Créditos (BRL)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-slate-300">
+                        {orders.map(o => (
+                            <tr key={o.id} className="border-b border-slate-800 hover:bg-slate-800/30">
+                                <td className="py-3 px-3">{new Intl.DateTimeFormat('pt-BR').format(o.createdAt)}</td>
+                                <td className="py-3 px-3 font-black text-white">#{o.orderNumber}</td>
+                                <td className="py-3 px-3 uppercase text-cyan-400/70">{o.branch}</td>
+                                <td className="py-3 px-3 italic uppercase text-[10px]">{o.status}</td>
+                                <td className="py-3 px-3 font-bold uppercase">{o.userProfile || 'JORDAN'}</td>
+                                <td className="py-3 px-3 text-right font-black text-white">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(o.value)}</td>
+                            </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-slate-950 font-black text-lg">
+                            <td colSpan="5" className="py-6 text-right px-6 text-cyan-400 uppercase tracking-widest">Total Consolidado:</td>
+                            <td className="py-6 text-right px-3 text-emerald-400 neon-text-blue">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(total)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                </div>
               </div>
             </div>
           );
